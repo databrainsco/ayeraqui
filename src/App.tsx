@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CameraView } from './components/CameraView'
 import { DecadeStrip } from './components/DecadeStrip'
 import {
@@ -11,7 +11,7 @@ import {
   groupByDecade,
   type HistoricPhoto,
 } from './lib/commonsApi'
-import { featuredExample, curatedById } from './lib/curated'
+import { curatedById, featuredExample } from './lib/curated'
 import {
   formatDistance,
   getCurrentPosition,
@@ -23,11 +23,23 @@ import './App.css'
 
 type Screen = 'home' | 'experience' | 'places'
 
-/** Radios cortos: la foto solo aparece si estás cerca del punto. */
 const RADII = [50, 90, 150, 250, 400] as const
 
 const defaultAlign = (photo: HistoricPhoto | null): OverlayAlign =>
   photo?.align ?? { scale: 1, x: 0, y: 0 }
+
+function indexInDecade(
+  photos: HistoricPhoto[],
+  pageId: number | null,
+): { decade: number | null | undefined; index: number } {
+  if (pageId == null) return { decade: undefined, index: 0 }
+  const groups = groupByDecade(photos)
+  for (const group of groups) {
+    const index = group.photos.findIndex((p) => p.pageId === pageId)
+    if (index >= 0) return { decade: group.decade, index }
+  }
+  return { decade: undefined, index: 0 }
+}
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('home')
@@ -45,6 +57,9 @@ export default function App() {
   const [align, setAlign] = useState<OverlayAlign>({ scale: 1, x: 0, y: 0 })
   const [cameraError, setCameraError] = useState<string | null>(null)
   const [infoOpen, setInfoOpen] = useState(false)
+  /** Evita que un refetch GPS borre la foto que el usuario eligió */
+  const pinnedPageId = useRef<number | null>(null)
+  const skipWatchReload = useRef(false)
 
   const groups = useMemo(() => groupByDecade(photos), [photos])
 
@@ -56,97 +71,132 @@ export default function App() {
 
   const activePhoto = decadePhotos[photoIndex] ?? decadePhotos[0] ?? null
 
-  const loadNearby = useCallback(async (pos: GeoPosition, r: number) => {
-    setBusy(true)
-    setStatus('Buscando fotos…')
-    setError(null)
-    try {
-      const found = await fetchHistoricPhotosNearby(pos.lat, pos.lon, r)
+  const applyFound = useCallback(
+    (found: HistoricPhoto[], opts: { resetSelection: boolean }) => {
       setPhotos(found)
-      setPhotoIndex(0)
-      setActiveDecade(undefined)
 
-      const firstCurated = found.find((p) => p.curated)
-      if (firstCurated && firstCurated.matchRadiusM != null) {
-        if (firstCurated.distanceM > firstCurated.matchRadiusM) {
+      if (opts.resetSelection || pinnedPageId.current == null) {
+        const first = found[0] ?? null
+        pinnedPageId.current = first?.pageId ?? null
+        setPhotoIndex(0)
+        setActiveDecade(undefined)
+        if (first) {
+          setOpacity(0.55)
+          setAlign(defaultAlign(first))
+        }
+      } else {
+        const kept = found.find((p) => p.pageId === pinnedPageId.current)
+        if (kept) {
+          const loc = indexInDecade(found, kept.pageId)
+          setActiveDecade(loc.decade)
+          setPhotoIndex(loc.index)
+        } else {
+          const first = found[0] ?? null
+          pinnedPageId.current = first?.pageId ?? null
+          setPhotoIndex(0)
+          setActiveDecade(undefined)
+          if (first) {
+            setOpacity(0.55)
+            setAlign(defaultAlign(first))
+          }
+        }
+      }
+
+      const selected =
+        found.find((p) => p.pageId === pinnedPageId.current) ?? found[0]
+      if (selected?.curated && selected.matchRadiusM != null) {
+        if (selected.distanceM > selected.matchRadiusM) {
           setStatus(
-            `Vista previa · estás a ${formatDistance(firstCurated.distanceM)} del punto (ideal bajo ${firstCurated.matchRadiusM} m)`,
+            `Vista previa · estás a ${formatDistance(selected.distanceM)} del punto (ideal bajo ${selected.matchRadiusM} m)`,
           )
         } else {
           setStatus(null)
         }
       } else if (!found.length) {
         setStatus(
-          `No hay fotos históricas a menos de ${r} m. Amplía el radio o prueba un lugar del mapa.`,
+          `No hay fotos históricas a menos de ${radius} m. Amplía el radio o prueba un lugar del mapa.`,
         )
       } else {
         setStatus(null)
       }
+    },
+    [radius],
+  )
 
-      if (found.length) {
-        setOpacity(0.55)
-        setAlign(defaultAlign(found[0]))
-        setInfoOpen(false)
+  const loadNearby = useCallback(
+    async (
+      pos: GeoPosition,
+      r: number,
+      opts: { resetSelection: boolean } = { resetSelection: false },
+    ) => {
+      setBusy(true)
+      if (opts.resetSelection) setStatus('Buscando fotos…')
+      setError(null)
+      try {
+        const found = await fetchHistoricPhotosNearby(pos.lat, pos.lon, r)
+        applyFound(found, opts)
+      } catch {
+        setError('No pudimos cargar fotos cercanas. Intenta de nuevo.')
+        setStatus(null)
+      } finally {
+        setBusy(false)
       }
+    },
+    [applyFound],
+  )
+
+  const openCuratedPhoto = useCallback(async (curatedId?: string) => {
+    setBusy(true)
+    setError(null)
+    setCameraError(null)
+    setStatus('Abriendo foto…')
+    skipWatchReload.current = true
+    try {
+      let pos: GeoPosition
+      try {
+        pos = await getCurrentPosition()
+      } catch {
+        const seed = featuredExample()
+        pos = { lat: seed.lat, lon: seed.lon, accuracy: 0 }
+      }
+      setPosition(pos)
+      const photo =
+        (curatedId ? curatedById(curatedId, pos) : null) ?? featuredExample(pos)
+      pinnedPageId.current = photo.pageId
+      setPhotos([photo])
+      setActiveDecade(photo.decade)
+      setPhotoIndex(0)
+      setOpacity(0.55)
+      setAlign(defaultAlign(photo))
+      setInfoOpen(false)
+      if (photo.matchRadiusM != null && photo.distanceM > photo.matchRadiusM) {
+        setStatus(
+          `Vista previa · estás a ${formatDistance(photo.distanceM)} del lugar`,
+        )
+      } else {
+        setStatus(null)
+      }
+      setScreen('experience')
     } catch {
-      setError('No pudimos cargar fotos cercanas. Intenta de nuevo.')
+      setError('No pudimos abrir la foto.')
       setStatus(null)
     } finally {
       setBusy(false)
     }
   }, [])
 
-  const openCuratedPhoto = useCallback(
-    async (curatedId?: string) => {
-      setBusy(true)
-      setError(null)
-      setCameraError(null)
-      setStatus('Abriendo foto…')
-      try {
-        let pos: GeoPosition
-        try {
-          pos = await getCurrentPosition()
-        } catch {
-          const seed = featuredExample()
-          pos = { lat: seed.lat, lon: seed.lon, accuracy: 0 }
-        }
-        setPosition(pos)
-        const photo =
-          (curatedId ? curatedById(curatedId, pos) : null) ??
-          featuredExample(pos)
-        setPhotos([photo])
-        setActiveDecade(photo.decade)
-        setPhotoIndex(0)
-        setOpacity(0.55)
-        setAlign(defaultAlign(photo))
-        setInfoOpen(false)
-        if (photo.matchRadiusM != null && photo.distanceM > photo.matchRadiusM) {
-          setStatus(
-            `Vista previa · estás a ${formatDistance(photo.distanceM)} del lugar`,
-          )
-        } else {
-          setStatus(null)
-        }
-        setScreen('experience')
-      } catch {
-        setError('No pudimos abrir la foto.')
-        setStatus(null)
-      } finally {
-        setBusy(false)
-      }
-    },
-    [],
-  )
   const start = useCallback(async () => {
     setBusy(true)
     setError(null)
     setCameraError(null)
     setStatus('Obteniendo ubicación precisa…')
+    skipWatchReload.current = false
+    pinnedPageId.current = null
     try {
       const pos = await getCurrentPosition()
       setPosition(pos)
       setScreen('experience')
-      await loadNearby(pos, radius)
+      await loadNearby(pos, radius, { resetSelection: true })
     } catch (err) {
       const message =
         err instanceof GeoError
@@ -175,27 +225,23 @@ export default function App() {
     }
   }, [])
 
-  // Seguir GPS en vivo para activar/desactivar overlay al acercarte
+  // Solo actualiza GPS; no recarga la galería (evita quitar la foto elegida)
   useEffect(() => {
     if (screen !== 'experience') return
-    let lastFetch = 0
-    const stop = watchPosition((pos) => {
+    return watchPosition((pos) => {
       setPosition(pos)
-      const now = Date.now()
-      if (now - lastFetch < 8000) return
-      lastFetch = now
-      void loadNearby(pos, radius)
     })
-    return stop
-  }, [screen, radius, loadNearby])
+  }, [screen])
 
   useEffect(() => {
     if (screen !== 'experience' || !position) return
-    void loadNearby(position, radius)
+    if (skipWatchReload.current) return
+    void loadNearby(position, radius, { resetSelection: false })
   }, [radius]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!activePhoto) return
+    if (pinnedPageId.current === activePhoto.pageId) return
     setAlign(defaultAlign(activePhoto))
     setOpacity(0.55)
   }, [activePhoto?.pageId]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -203,13 +249,17 @@ export default function App() {
   const onDecadeSelect = (decade: number | null) => {
     setActiveDecade(decade)
     setPhotoIndex(0)
-    setInfoOpen(false)
+    const group = groups.find((g) => g.decade === decade) ?? groups[0]
+    pinnedPageId.current = group?.photos[0]?.pageId ?? null
   }
 
   const cyclePhoto = (dir: 1 | -1) => {
     if (decadePhotos.length < 2) return
-    setPhotoIndex((i) => (i + dir + decadePhotos.length) % decadePhotos.length)
-    setInfoOpen(false)
+    setPhotoIndex((i) => {
+      const next = (i + dir + decadePhotos.length) % decadePhotos.length
+      pinnedPageId.current = decadePhotos[next]?.pageId ?? null
+      return next
+    })
   }
 
   if (screen === 'places') {
@@ -232,8 +282,8 @@ export default function App() {
           <p className="brand-mark">AyerAquí</p>
           <h1 className="brand-line">Mira cómo era este lugar</h1>
           <p className="brand-sub">
-            Superpone fotos históricas sobre la cámara. Las curadas se pueden
-            ver aunque no estés en el lugar; in situ se alinean mejor.
+            Superpone fotos históricas sobre la cámara según tu ubicación, o
+            ábrelas desde el mapa.
           </p>
         </header>
         <div className="home-actions">
@@ -248,14 +298,6 @@ export default function App() {
           <button
             type="button"
             className="btn-secondary"
-            onClick={() => void openCuratedPhoto()}
-            disabled={busy}
-          >
-            Ver foto UNAM 1950s
-          </button>
-          <button
-            type="button"
-            className="btn-secondary"
             onClick={() => {
               setError(null)
               setScreen('places')
@@ -263,10 +305,6 @@ export default function App() {
           >
             Mapa de lugares
           </button>
-          <p className="home-featured-note">
-            La foto de Rectoría se muestra siempre; el GPS solo indica a qué
-            distancia estás del punto real.
-          </p>
           {error && <p className="banner-error">{error}</p>}
           {status && !error && <p className="banner-status">{status}</p>}
         </div>
@@ -294,6 +332,9 @@ export default function App() {
             setScreen('home')
             setPhotos([])
             setPosition(null)
+            pinnedPageId.current = null
+            skipWatchReload.current = false
+            setInfoOpen(false)
           }}
         >
           AyerAquí
@@ -338,24 +379,27 @@ export default function App() {
               <p className="photo-title" title={activePhoto.title}>
                 {activePhoto.title}
               </p>
-              {(activePhoto.context || activePhoto.work) && (
-                <button
-                  type="button"
-                  className="btn-mini"
-                  onClick={() => setInfoOpen((v) => !v)}
-                >
-                  {infoOpen ? 'Ocultar ficha' : 'Ver ficha'}
-                </button>
-              )}
+              <button
+                type="button"
+                className="btn-mini"
+                onClick={() => setInfoOpen((v) => !v)}
+              >
+                {infoOpen ? 'Ocultar ficha' : 'Ver ficha'}
+              </button>
             </div>
 
-            {infoOpen && (activePhoto.context || activePhoto.work) && (
+            {infoOpen && (
               <div className="photo-fiche">
-                {activePhoto.work && (
+                {activePhoto.work ? (
                   <p>
                     <span>Obra</span>
                     {activePhoto.work}
                     {activePhoto.artist ? ` — ${activePhoto.artist}` : ''}
+                  </p>
+                ) : (
+                  <p>
+                    <span>Título</span>
+                    {activePhoto.title}
                   </p>
                 )}
                 {activePhoto.place && (
@@ -364,14 +408,27 @@ export default function App() {
                     {activePhoto.place}
                   </p>
                 )}
+                {activePhoto.artist && !activePhoto.work && (
+                  <p>
+                    <span>Autor</span>
+                    {activePhoto.artist}
+                  </p>
+                )}
                 <p>
                   <span>Coordenadas del punto</span>
                   {activePhoto.lat.toFixed(5)}, {activePhoto.lon.toFixed(5)} · a{' '}
                   {formatDistance(activePhoto.distanceM)}
                   {activePhoto.matchRadiusM
-                    ? ` (activo bajo ${activePhoto.matchRadiusM} m)`
+                    ? ` (ideal bajo ${activePhoto.matchRadiusM} m)`
                     : ''}
                 </p>
+                {activePhoto.year != null && (
+                  <p>
+                    <span>Año / década</span>
+                    {activePhoto.year}
+                    {activePhoto.decade != null ? ` · ${activePhoto.decade}s` : ''}
+                  </p>
+                )}
                 {activePhoto.context && (
                   <p>
                     <span>Contexto</span>
@@ -380,6 +437,9 @@ export default function App() {
                 )}
                 {activePhoto.credit && (
                   <p className="photo-credit">{activePhoto.credit}</p>
+                )}
+                {activePhoto.license && (
+                  <p className="photo-credit">Licencia: {activePhoto.license}</p>
                 )}
               </div>
             )}

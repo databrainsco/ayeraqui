@@ -135,14 +135,7 @@ export function HistoricOverlay({
   if (!photo) return null
 
   return (
-    <div
-      ref={layerRef}
-      className={`overlay-layer ${dragging ? 'is-dragging' : ''} mode-${mode}`}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={endPointer}
-      onPointerCancel={endPointer}
-    >
+    <div className={`overlay-root ${dragging ? 'is-dragging' : ''} mode-${mode}`}>
       <div
         className="overlay-historic"
         style={{
@@ -158,7 +151,16 @@ export function HistoricOverlay({
         />
       </div>
 
-      <div className="overlay-chrome" onPointerDown={(e) => e.stopPropagation()}>
+      <div
+        ref={layerRef}
+        className="overlay-gestures"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endPointer}
+        onPointerCancel={endPointer}
+      />
+
+      <div className="overlay-chrome">
         <div className="overlay-mode">
           <button
             type="button"
