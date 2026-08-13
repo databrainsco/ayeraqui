@@ -13,10 +13,15 @@ import {
 } from './lib/commonsApi'
 import { curatedById, featuredExample } from './lib/curated'
 import {
+  listUserPhotos,
+  userRecordToHistoric,
+} from './lib/userPhotos'
+import {
   formatDistance,
   getCurrentPosition,
   GeoError,
   watchPosition,
+  distanceMeters,
   type GeoPosition,
 } from './lib/geolocation'
 import './App.css'
@@ -128,6 +133,90 @@ export default function App() {
     },
     [applyFound],
   )
+
+  const openPlaceInCamera = useCallback(
+    async (place: { lat: number; lon: number; name: string }) => {
+      setBusy(true)
+      setError(null)
+      setCameraError(null)
+      setStatus(`Cargando fotos de ${place.name}…`)
+      skipWatchReload.current = true
+      try {
+        let devicePos: GeoPosition | null = null
+        try {
+          devicePos = await getCurrentPosition()
+          setPosition(devicePos)
+        } catch {
+          setPosition({ lat: place.lat, lon: place.lon, accuracy: 0 })
+        }
+
+        const found = await fetchHistoricPhotosNearby(place.lat, place.lon, 400)
+        const photosForUi = devicePos
+          ? found.map((p) => ({
+              ...p,
+              distanceM: distanceMeters(devicePos, {
+                lat: p.lat,
+                lon: p.lon,
+              }),
+            }))
+          : found
+
+        setPhotos(photosForUi)
+        setSelectedPageId(null)
+        setActiveDecade(undefined)
+        setInfoOpen(false)
+        setStatus(
+          photosForUi.length
+            ? `Fotos de ${place.name}: elige una década`
+            : `No hay fotos cerca de ${place.name}. Prueba otro punto.`,
+        )
+        setScreen('experience')
+      } catch {
+        setError('No pudimos abrir ese lugar en la cámara.')
+        setStatus(null)
+      } finally {
+        setBusy(false)
+      }
+    },
+    [],
+  )
+
+  const openUserPhotoInCamera = useCallback(async (photoId: string) => {
+    setBusy(true)
+    setError(null)
+    setCameraError(null)
+    setStatus('Abriendo tu foto…')
+    skipWatchReload.current = true
+    try {
+      let pos: GeoPosition
+      try {
+        pos = await getCurrentPosition()
+      } catch {
+        pos = { lat: 0, lon: 0, accuracy: 0 }
+      }
+      const rows = await listUserPhotos()
+      const row = rows.find((r) => r.id === photoId)
+      if (!row) throw new Error('missing')
+      if (pos.lat === 0 && pos.lon === 0) {
+        pos = { lat: row.lat, lon: row.lon, accuracy: 0 }
+      }
+      setPosition(pos)
+      const photo = userRecordToHistoric(row, pos)
+      setPhotos([photo])
+      setSelectedPageId(photo.pageId)
+      setActiveDecade(photo.decade)
+      setOpacity(0.55)
+      setAlign(defaultAlign(photo))
+      setInfoOpen(false)
+      setStatus(null)
+      setScreen('experience')
+    } catch {
+      setError('No pudimos abrir tu foto.')
+      setStatus(null)
+    } finally {
+      setBusy(false)
+    }
+  }, [])
 
   const openCuratedPhoto = useCallback(async (curatedId?: string) => {
     setBusy(true)
@@ -252,6 +341,8 @@ export default function App() {
         onBack={() => setScreen('home')}
         onLocate={() => void locateForMap()}
         onOpenCurated={(curatedId) => void openCuratedPhoto(curatedId)}
+        onOpenPlaceCamera={(place) => void openPlaceInCamera(place)}
+        onOpenUserPhoto={(id) => void openUserPhotoInCamera(id)}
       />
     )
   }
@@ -445,14 +536,17 @@ export default function App() {
               >
                 Siguiente
               </button>
-              <a
-                className="btn-mini link"
-                href={activePhoto.descriptionUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Fuente
-              </a>
+              {activePhoto.descriptionUrl &&
+                activePhoto.descriptionUrl !== '#' && (
+                  <a
+                    className="btn-mini link"
+                    href={activePhoto.descriptionUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Fuente
+                  </a>
+                )}
             </div>
           </div>
         )}

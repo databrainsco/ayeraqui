@@ -1,5 +1,6 @@
 import { distanceMeters } from './geolocation'
 import { curatedNearby } from './curated'
+import { loadUserHistoricPhotos } from './userPhotos'
 
 const API = 'https://commons.wikimedia.org/w/api.php'
 
@@ -185,11 +186,18 @@ async function enrichPages(
 
 function mergePhotos(
   curated: HistoricPhoto[],
+  userOwned: HistoricPhoto[],
   remote: HistoricPhoto[],
 ): HistoricPhoto[] {
-  const seen = new Set(curated.map((p) => p.fullUrl))
-  const rest = remote.filter((p) => !seen.has(p.fullUrl))
-  return [...curated, ...rest]
+  const seen = new Set<string>()
+  const out: HistoricPhoto[] = []
+  for (const photo of [...userOwned, ...curated, ...remote]) {
+    const key = `${photo.pageId}:${photo.fullUrl}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(photo)
+  }
+  return out
 }
 
 export async function fetchHistoricPhotosNearby(
@@ -197,10 +205,16 @@ export async function fetchHistoricPhotosNearby(
   lon: number,
   radiusM = 500,
 ): Promise<HistoricPhoto[]> {
-  const curated = curatedNearby({ lat, lon }, radiusM)
-  const hits = await geoSearch(lat, lon, radiusM)
-  const remote = await enrichPages(hits, { lat, lon })
-  return mergePhotos(curated, remote)
+  const user = { lat, lon }
+  const [curated, userOwned, hits] = await Promise.all([
+    Promise.resolve(curatedNearby(user, radiusM)),
+    loadUserHistoricPhotos(user),
+    geoSearch(lat, lon, radiusM),
+  ])
+  const remote = await enrichPages(hits, user)
+  const remoteInRadius = remote.filter((p) => p.distanceM <= radiusM)
+  // Curated + fotos del usuario: siempre disponibles; Commons solo cerca.
+  return mergePhotos(curated, userOwned, remoteInRadius)
 }
 
 function sortPhotos(photos: HistoricPhoto[]): HistoricPhoto[] {
