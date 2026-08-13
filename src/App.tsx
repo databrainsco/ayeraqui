@@ -11,7 +11,7 @@ import {
   groupByDecade,
   type HistoricPhoto,
 } from './lib/commonsApi'
-import { featuredExample, featuredHeroUrl, curatedById } from './lib/curated'
+import { featuredExample, curatedById } from './lib/curated'
 import {
   formatDistance,
   getCurrentPosition,
@@ -45,8 +45,6 @@ export default function App() {
   const [align, setAlign] = useState<OverlayAlign>({ scale: 1, x: 0, y: 0 })
   const [cameraError, setCameraError] = useState<string | null>(null)
   const [infoOpen, setInfoOpen] = useState(false)
-
-  const heroUrl = useMemo(() => featuredHeroUrl(), [])
 
   const groups = useMemo(() => groupByDecade(photos), [photos])
 
@@ -88,7 +86,7 @@ export default function App() {
       if (found.length) {
         setOpacity(0.55)
         setAlign(defaultAlign(found[0]))
-        setInfoOpen(Boolean(found[0]?.curated))
+        setInfoOpen(false)
       }
     } catch {
       setError('No pudimos cargar fotos cercanas. Intenta de nuevo.')
@@ -121,7 +119,7 @@ export default function App() {
         setPhotoIndex(0)
         setOpacity(0.55)
         setAlign(defaultAlign(photo))
-        setInfoOpen(true)
+        setInfoOpen(false)
         if (photo.matchRadiusM != null && photo.distanceM > photo.matchRadiusM) {
           setStatus(
             `Vista previa · estás a ${formatDistance(photo.distanceM)} del lugar`,
@@ -205,13 +203,13 @@ export default function App() {
   const onDecadeSelect = (decade: number | null) => {
     setActiveDecade(decade)
     setPhotoIndex(0)
-    setInfoOpen(true)
+    setInfoOpen(false)
   }
 
   const cyclePhoto = (dir: 1 | -1) => {
     if (decadePhotos.length < 2) return
     setPhotoIndex((i) => (i + dir + decadePhotos.length) % decadePhotos.length)
-    setInfoOpen(true)
+    setInfoOpen(false)
   }
 
   if (screen === 'places') {
@@ -230,9 +228,6 @@ export default function App() {
     return (
       <div className="shell home">
         <div className="home-atmosphere" aria-hidden />
-        <div className="home-hero-photo" aria-hidden>
-          <img src={heroUrl} alt="" />
-        </div>
         <header className="home-brand">
           <p className="brand-mark">AyerAquí</p>
           <h1 className="brand-line">Mira cómo era este lugar</h1>
