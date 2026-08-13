@@ -22,4 +22,8 @@ npm run preview
 
 Publicado en GitHub Pages: https://databrainsco.github.io/ayeraqui/
 
-Fotos © respectivos autores en Wikimedia Commons.
+En cada deploy a `main`, el CI publica también el artefacto versionado `ayeraqui-vX.Y.Z` (build + `FEATURES.md` + `deployment.json`).
+
+Features de la versión actual: [releases/v1.1.0.md](releases/v1.1.0.md)
+
+Fotos © respectivos autores en Wikimedia Commons / archivos citados.

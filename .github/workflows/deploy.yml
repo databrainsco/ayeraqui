@@ -17,17 +17,90 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      artifact_name: ${{ steps.meta.outputs.artifact_name }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+
       - run: npm ci
+
+      - name: Read version and prepare release metadata
+        id: meta
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          ARTIFACT="ayeraqui-v${VERSION}"
+          FEATURES="releases/v${VERSION}.md"
+          if [ ! -f "$FEATURES" ]; then
+            echo "::error::Missing features file for this version: $FEATURES"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=$ARTIFACT" >> "$GITHUB_OUTPUT"
+          echo "features_file=$FEATURES" >> "$GITHUB_OUTPUT"
+          echo "Building AyerAquí v${VERSION}"
+
       - run: npm run build
-      - uses: actions/upload-pages-artifact@v3
+
+      - name: Package versioned deployment artifact
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          FEATURES="${{ steps.meta.outputs.features_file }}"
+          OUT="release-artifact"
+          rm -rf "$OUT"
+          mkdir -p "$OUT"
+
+          cp -R dist "$OUT/dist"
+          cp "$FEATURES" "$OUT/FEATURES.md"
+          cp FEATURES.md "$OUT/FEATURES-INDEX.md"
+          cp package.json "$OUT/package.json"
+          cp README.md "$OUT/README.md"
+
+          cat > "$OUT/deployment.json" <<EOF
+          {
+            "name": "ayeraqui",
+            "version": "${VERSION}",
+            "artifact": "${{ steps.meta.outputs.artifact_name }}",
+            "commit": "${GITHUB_SHA}",
+            "ref": "${GITHUB_REF_NAME}",
+            "builtAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "deploymentUrl": "https://databrainsco.github.io/ayeraqui/",
+            "repository": "https://github.com/databrainsco/ayeraqui",
+            "workflow": "${GITHUB_WORKFLOW}",
+            "runId": "${GITHUB_RUN_ID}",
+            "runUrl": "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}",
+            "featuresFile": "FEATURES.md"
+          }
+          EOF
+
+          # Keep JSON valid (strip leading indent from heredoc)
+          python3 - <<'PY'
+          import json, pathlib
+          p = pathlib.Path("release-artifact/deployment.json")
+          data = json.loads(p.read_text())
+          p.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+          PY
+
+          echo "Packaged contents:"
+          find "$OUT" -maxdepth 2 -type f | sort
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
           path: dist
+
+      - name: Upload versioned release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.artifact_name }}
+          path: release-artifact
+          if-no-files-found: error
+          retention-days: 90
 
   deploy:
     needs: build
@@ -38,3 +111,15 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Deployment summary
+        run: |
+          {
+            echo "## AyerAquí v${{ needs.build.outputs.version }} deployed"
+            echo ""
+            echo "- **URL:** https://databrainsco.github.io/ayeraqui/"
+            echo "- **Artifact:** \`${{ needs.build.outputs.artifact_name }}\`"
+            echo "- **Features:** included inside the artifact as \`FEATURES.md\`"
+            echo ""
+            echo "Download the artifact from this workflow run (Artifacts)."
+          } >> "$GITHUB_STEP_SUMMARY"
