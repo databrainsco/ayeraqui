@@ -13,6 +13,21 @@ export type OverlayAlign = {
   y: number
 }
 
+/** Recorte en % desde cada borde (0 = sin recorte). */
+export type OverlayCrop = {
+  top: number
+  right: number
+  bottom: number
+  left: number
+}
+
+export const EMPTY_CROP: OverlayCrop = {
+  top: 0,
+  right: 0,
+  bottom: 0,
+  left: 0,
+}
+
 type Props = {
   photo: HistoricPhoto | null
   /** 0 = solo cámara, 1 = solo foto antigua */
@@ -20,8 +35,11 @@ type Props = {
   onOpacityChange: (value: number) => void
   align: OverlayAlign
   onAlignChange: (align: OverlayAlign) => void
+  crop: OverlayCrop
+  onCropChange: (crop: OverlayCrop) => void
 }
 
+type UiMode = 'blend' | 'pan' | 'crop'
 type DragMode = 'blend' | 'pan' | null
 
 export function HistoricOverlay({
@@ -30,9 +48,11 @@ export function HistoricOverlay({
   onOpacityChange,
   align,
   onAlignChange,
+  crop,
+  onCropChange,
 }: Props) {
   const layerRef = useRef<HTMLDivElement>(null)
-  const [mode, setMode] = useState<'blend' | 'pan'>('blend')
+  const [mode, setMode] = useState<UiMode>('blend')
   const [dragging, setDragging] = useState<DragMode>(null)
   const dragStart = useRef<{
     x: number
@@ -49,6 +69,7 @@ export function HistoricOverlay({
   }, [photo?.pageId])
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (mode === 'crop') return
     e.currentTarget.setPointerCapture(e.pointerId)
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
 
@@ -71,6 +92,7 @@ export function HistoricOverlay({
   }
 
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (mode === 'crop') return
     if (!pointers.current.has(e.pointerId)) return
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
 
@@ -132,7 +154,14 @@ export function HistoricOverlay({
     [align, onAlignChange],
   )
 
+  const setCropSide = (side: keyof OverlayCrop, value: number) => {
+    const next = Math.min(40, Math.max(0, value))
+    onCropChange({ ...crop, [side]: next })
+  }
+
   if (!photo) return null
+
+  const clip = `inset(${crop.top}% ${crop.right}% ${crop.bottom}% ${crop.left}%)`
 
   return (
     <div className={`overlay-root ${dragging ? 'is-dragging' : ''} mode-${mode}`}>
@@ -141,6 +170,7 @@ export function HistoricOverlay({
         style={{
           opacity,
           transform: `translate(${align.x}%, ${align.y}%) scale(${align.scale})`,
+          clipPath: clip,
         }}
       >
         <img
@@ -150,6 +180,19 @@ export function HistoricOverlay({
           className="overlay-image"
         />
       </div>
+
+      {mode === 'crop' && (
+        <div
+          className="crop-frame"
+          style={{
+            top: `${crop.top}%`,
+            right: `${crop.right}%`,
+            bottom: `${crop.bottom}%`,
+            left: `${crop.left}%`,
+          }}
+          aria-hidden
+        />
+      )}
 
       <div
         ref={layerRef}
@@ -175,6 +218,13 @@ export function HistoricOverlay({
             onClick={() => setMode('pan')}
           >
             Alinear
+          </button>
+          <button
+            type="button"
+            className={mode === 'crop' ? 'is-active' : ''}
+            onClick={() => setMode('crop')}
+          >
+            Recortar
           </button>
         </div>
 
@@ -212,12 +262,45 @@ export function HistoricOverlay({
             </button>
           </div>
         )}
+
+        {mode === 'crop' && (
+          <div className="crop-controls">
+            {(
+              [
+                ['top', 'Arriba'],
+                ['bottom', 'Abajo'],
+                ['left', 'Izq'],
+                ['right', 'Der'],
+              ] as const
+            ).map(([side, label]) => (
+              <label key={side} className="crop-slider">
+                <span>{label}</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={40}
+                  step={1}
+                  value={crop[side]}
+                  onChange={(e) => setCropSide(side, Number(e.target.value))}
+                />
+                <em>{Math.round(crop[side])}%</em>
+              </label>
+            ))}
+            <button
+              type="button"
+              className="btn-mini crop-reset"
+              onClick={() => onCropChange(EMPTY_CROP)}
+            >
+              Quitar recorte
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="overlay-hint" aria-hidden>
-        {mode === 'blend'
-          ? 'Desliza para mezclar cámara y foto'
-          : 'Arrastra para encajar · pellizca para zoom'}
+        {mode === 'blend' && 'Desliza para mezclar cámara y foto'}
+        {mode === 'pan' && 'Arrastra para encajar · pellizca para zoom'}
+        {mode === 'crop' && 'Ajusta los bordes para recortar la foto antigua'}
       </div>
     </div>
   )

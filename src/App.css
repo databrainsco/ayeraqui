@@ -346,10 +346,55 @@ a {
   background: transparent;
   color: var(--muted);
   border-radius: 999px;
-  padding: 0.4rem 0.85rem;
-  font-size: 0.78rem;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.72rem;
   font-weight: 600;
   cursor: pointer;
+}
+
+.crop-frame {
+  position: absolute;
+  z-index: 3;
+  border: 1.5px solid rgba(226, 168, 107, 0.9);
+  box-shadow: 0 0 0 9999px rgba(12, 20, 18, 0.35);
+  pointer-events: none;
+  border-radius: 2px;
+}
+
+.crop-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 14px;
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+}
+
+.crop-slider {
+  display: grid;
+  grid-template-columns: 3.2rem 1fr 2.2rem;
+  gap: 0.4rem;
+  align-items: center;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.crop-slider input {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.crop-slider em {
+  font-style: normal;
+  text-align: right;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.crop-reset {
+  align-self: center;
+  margin-top: 0.2rem;
 }
 
 .overlay-mode button.is-active {

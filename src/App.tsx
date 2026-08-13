@@ -6,7 +6,9 @@ import {
 import { DecadeStrip } from './components/DecadeStrip'
 import {
   HistoricOverlay,
+  EMPTY_CROP,
   type OverlayAlign,
+  type OverlayCrop,
 } from './components/HistoricOverlay'
 import { PlacesMap } from './components/PlacesMap'
 import {
@@ -54,6 +56,7 @@ export default function App() {
   )
   const [opacity, setOpacity] = useState(0.55)
   const [align, setAlign] = useState<OverlayAlign>({ scale: 1, x: 0, y: 0 })
+  const [crop, setCrop] = useState<OverlayCrop>(EMPTY_CROP)
   const [cameraError, setCameraError] = useState<string | null>(null)
   const [infoOpen, setInfoOpen] = useState(false)
   /** null = cámara limpia, sin overlay */
@@ -84,6 +87,7 @@ export default function App() {
     setActiveDecade(photo.decade)
     setOpacity(0.55)
     setAlign(defaultAlign(photo))
+    setCrop(EMPTY_CROP)
     setInfoOpen(false)
     setStatus(null)
   }, [])
@@ -325,6 +329,7 @@ export default function App() {
     if (!activePhoto) return
     setAlign(defaultAlign(activePhoto))
     setOpacity(0.55)
+    setCrop(EMPTY_CROP)
   }, [activePhoto?.pageId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const onDecadeSelect = (decade: number | null) => {
@@ -360,6 +365,7 @@ export default function App() {
         historicUrl: activePhoto.fullUrl,
         opacity,
         align,
+        crop,
       })
       const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
       const result = await saveBlobToDevice(
@@ -381,7 +387,7 @@ export default function App() {
     } finally {
       setSavingCapture(false)
     }
-  }, [activePhoto, opacity, align])
+  }, [activePhoto, opacity, align, crop])
 
   if (screen === 'places') {
     return (
@@ -448,6 +454,8 @@ export default function App() {
         onOpacityChange={setOpacity}
         align={align}
         onAlignChange={setAlign}
+        crop={crop}
+        onCropChange={setCrop}
       />
 
       <div className="top-bar">

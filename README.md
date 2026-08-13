@@ -24,6 +24,6 @@ Publicado en GitHub Pages: https://databrainsco.github.io/ayeraqui/
 
 En cada deploy a `main`, el CI publica también el artefacto versionado `ayeraqui-vX.Y.Z` (build + `FEATURES.md` + `deployment.json`).
 
-Features de la versión actual: [releases/v1.3.0.md](releases/v1.3.0.md)
+Features de la versión actual: [releases/v1.4.0.md](releases/v1.4.0.md)
 
 Fotos © respectivos autores en Wikimedia Commons / archivos citados.
