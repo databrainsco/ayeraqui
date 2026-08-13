@@ -25,20 +25,8 @@ type Screen = 'home' | 'experience' | 'places'
 
 const RADII = [50, 90, 150, 250, 400] as const
 
-const defaultAlign = (photo: HistoricPhoto | null): OverlayAlign =>
-  photo?.align ?? { scale: 1, x: 0, y: 0 }
-
-function indexInDecade(
-  photos: HistoricPhoto[],
-  pageId: number | null,
-): { decade: number | null | undefined; index: number } {
-  if (pageId == null) return { decade: undefined, index: 0 }
-  const groups = groupByDecade(photos)
-  for (const group of groups) {
-    const index = group.photos.findIndex((p) => p.pageId === pageId)
-    if (index >= 0) return { decade: group.decade, index }
-  }
-  return { decade: undefined, index: 0 }
+function defaultAlign(photo: HistoricPhoto | null): OverlayAlign {
+  return photo?.align ?? { scale: 1, x: 0, y: 0 }
 }
 
 export default function App() {
@@ -52,72 +40,68 @@ export default function App() {
   const [activeDecade, setActiveDecade] = useState<number | null | undefined>(
     undefined,
   )
-  const [photoIndex, setPhotoIndex] = useState(0)
   const [opacity, setOpacity] = useState(0.55)
   const [align, setAlign] = useState<OverlayAlign>({ scale: 1, x: 0, y: 0 })
   const [cameraError, setCameraError] = useState<string | null>(null)
   const [infoOpen, setInfoOpen] = useState(false)
-  /** Evita que un refetch GPS borre la foto que el usuario eligió */
-  const pinnedPageId = useRef<number | null>(null)
+  /** null = cámara limpia, sin overlay */
+  const [selectedPageId, setSelectedPageId] = useState<number | null>(null)
   const skipWatchReload = useRef(false)
 
   const groups = useMemo(() => groupByDecade(photos), [photos])
 
   const decadePhotos = useMemo(() => {
-    if (!groups.length) return []
-    if (activeDecade === undefined) return groups[0]?.photos ?? []
+    if (!groups.length || activeDecade === undefined) return []
     return groups.find((g) => g.decade === activeDecade)?.photos ?? []
   }, [groups, activeDecade])
 
-  const activePhoto = decadePhotos[photoIndex] ?? decadePhotos[0] ?? null
+  const activePhoto = useMemo(() => {
+    if (selectedPageId == null) return null
+    return photos.find((p) => p.pageId === selectedPageId) ?? null
+  }, [photos, selectedPageId])
+
+  const selectPhoto = useCallback((photo: HistoricPhoto | null) => {
+    if (!photo) {
+      setSelectedPageId(null)
+      setInfoOpen(false)
+      return
+    }
+    setSelectedPageId(photo.pageId)
+    setActiveDecade(photo.decade)
+    setOpacity(0.55)
+    setAlign(defaultAlign(photo))
+    setInfoOpen(false)
+    setStatus(null)
+  }, [])
 
   const applyFound = useCallback(
     (found: HistoricPhoto[], opts: { resetSelection: boolean }) => {
       setPhotos(found)
 
-      if (opts.resetSelection || pinnedPageId.current == null) {
-        const first = found[0] ?? null
-        pinnedPageId.current = first?.pageId ?? null
-        setPhotoIndex(0)
+      if (opts.resetSelection) {
+        setSelectedPageId(null)
         setActiveDecade(undefined)
-        if (first) {
-          setOpacity(0.55)
-          setAlign(defaultAlign(first))
-        }
-      } else {
-        const kept = found.find((p) => p.pageId === pinnedPageId.current)
-        if (kept) {
-          const loc = indexInDecade(found, kept.pageId)
-          setActiveDecade(loc.decade)
-          setPhotoIndex(loc.index)
-        } else {
-          const first = found[0] ?? null
-          pinnedPageId.current = first?.pageId ?? null
-          setPhotoIndex(0)
-          setActiveDecade(undefined)
-          if (first) {
-            setOpacity(0.55)
-            setAlign(defaultAlign(first))
-          }
-        }
-      }
-
-      const selected =
-        found.find((p) => p.pageId === pinnedPageId.current) ?? found[0]
-      if (selected?.curated && selected.matchRadiusM != null) {
-        if (selected.distanceM > selected.matchRadiusM) {
+        setInfoOpen(false)
+        if (!found.length) {
           setStatus(
-            `Vista previa · estás a ${formatDistance(selected.distanceM)} del punto (ideal bajo ${selected.matchRadiusM} m)`,
+            `No hay fotos históricas a menos de ${radius} m. Amplía el radio o prueba un lugar del mapa.`,
           )
         } else {
-          setStatus(null)
+          setStatus('Elige una década para superponer')
         }
-      } else if (!found.length) {
+        return
+      }
+
+      setSelectedPageId((current) => {
+        if (current == null) return null
+        const kept = found.find((p) => p.pageId === current)
+        return kept ? current : null
+      })
+
+      if (!found.length) {
         setStatus(
           `No hay fotos históricas a menos de ${radius} m. Amplía el radio o prueba un lugar del mapa.`,
         )
-      } else {
-        setStatus(null)
       }
     },
     [radius],
@@ -162,10 +146,9 @@ export default function App() {
       setPosition(pos)
       const photo =
         (curatedId ? curatedById(curatedId, pos) : null) ?? featuredExample(pos)
-      pinnedPageId.current = photo.pageId
+      setSelectedPageId(photo.pageId)
       setPhotos([photo])
       setActiveDecade(photo.decade)
-      setPhotoIndex(0)
       setOpacity(0.55)
       setAlign(defaultAlign(photo))
       setInfoOpen(false)
@@ -191,7 +174,8 @@ export default function App() {
     setCameraError(null)
     setStatus('Obteniendo ubicación precisa…')
     skipWatchReload.current = false
-    pinnedPageId.current = null
+    setSelectedPageId(null)
+    setActiveDecade(undefined)
     try {
       const pos = await getCurrentPosition()
       setPosition(pos)
@@ -241,25 +225,23 @@ export default function App() {
 
   useEffect(() => {
     if (!activePhoto) return
-    if (pinnedPageId.current === activePhoto.pageId) return
     setAlign(defaultAlign(activePhoto))
     setOpacity(0.55)
   }, [activePhoto?.pageId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const onDecadeSelect = (decade: number | null) => {
     setActiveDecade(decade)
-    setPhotoIndex(0)
-    const group = groups.find((g) => g.decade === decade) ?? groups[0]
-    pinnedPageId.current = group?.photos[0]?.pageId ?? null
+    const group = groups.find((g) => g.decade === decade)
+    const first = group?.photos[0] ?? null
+    selectPhoto(first)
   }
 
   const cyclePhoto = (dir: 1 | -1) => {
-    if (decadePhotos.length < 2) return
-    setPhotoIndex((i) => {
-      const next = (i + dir + decadePhotos.length) % decadePhotos.length
-      pinnedPageId.current = decadePhotos[next]?.pageId ?? null
-      return next
-    })
+    if (decadePhotos.length < 2 || selectedPageId == null) return
+    const current = decadePhotos.findIndex((p) => p.pageId === selectedPageId)
+    const base = current >= 0 ? current : 0
+    const next = (base + dir + decadePhotos.length) % decadePhotos.length
+    selectPhoto(decadePhotos[next] ?? null)
   }
 
   if (screen === 'places') {
@@ -332,7 +314,8 @@ export default function App() {
             setScreen('home')
             setPhotos([])
             setPosition(null)
-            pinnedPageId.current = null
+            setSelectedPageId(null)
+            setActiveDecade(undefined)
             skipWatchReload.current = false
             setInfoOpen(false)
           }}
@@ -353,9 +336,7 @@ export default function App() {
               · {formatDistance(activePhoto.distanceM)}
             </span>
           ) : (
-            position && (
-              <span className="meta-pill soft">Sin foto en este punto</span>
-            )
+            <span className="meta-pill soft">Sin foto seleccionada</span>
           )}
         </div>
       </div>

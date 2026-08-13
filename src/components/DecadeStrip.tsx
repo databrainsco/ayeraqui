@@ -12,9 +12,7 @@ export function DecadeStrip({ groups, activeDecade, onSelect }: Props) {
   return (
     <div className="decade-strip" role="tablist" aria-label="Décadas">
       {groups.map((group) => {
-        const selected =
-          activeDecade === group.decade ||
-          (activeDecade === undefined && group === groups[0])
+        const selected = activeDecade === group.decade
         return (
           <button
             key={group.label}
