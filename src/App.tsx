@@ -5,6 +5,7 @@ import {
   HistoricOverlay,
   type OverlayAlign,
 } from './components/HistoricOverlay'
+import { PlacesMap } from './components/PlacesMap'
 import {
   fetchHistoricPhotosNearby,
   groupByDecade,
@@ -20,7 +21,7 @@ import {
 } from './lib/geolocation'
 import './App.css'
 
-type Screen = 'home' | 'experience'
+type Screen = 'home' | 'experience' | 'places'
 
 /** Radios cortos: la foto solo aparece si estás cerca del punto. */
 const RADII = [50, 90, 150, 250, 400] as const
@@ -113,6 +114,23 @@ export default function App() {
     }
   }, [loadNearby, radius])
 
+  const locateForMap = useCallback(async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      const pos = await getCurrentPosition()
+      setPosition(pos)
+    } catch (err) {
+      setError(
+        err instanceof GeoError
+          ? err.message
+          : 'No pudimos obtener tu ubicación.',
+      )
+    } finally {
+      setBusy(false)
+    }
+  }, [])
+
   // Seguir GPS en vivo para activar/desactivar overlay al acercarte
   useEffect(() => {
     if (screen !== 'experience') return
@@ -150,6 +168,17 @@ export default function App() {
     setInfoOpen(true)
   }
 
+  if (screen === 'places') {
+    return (
+      <PlacesMap
+        user={position}
+        locating={busy}
+        onBack={() => setScreen('home')}
+        onLocate={() => void locateForMap()}
+      />
+    )
+  }
+
   if (screen === 'home') {
     return (
       <div className="shell home">
@@ -173,6 +202,16 @@ export default function App() {
             disabled={busy}
           >
             {busy ? 'Preparando…' : 'Abrir cámara aquí'}
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => {
+              setError(null)
+              setScreen('places')
+            }}
+          >
+            Mapa de lugares
           </button>
           <p className="home-featured-note">
             Ejemplo curado: mural de Siqueiros en Rectoría UNAM — se activa a

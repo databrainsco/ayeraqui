@@ -706,3 +706,193 @@ a {
     width: 100%;
   }
 }
+
+/* —— Places map —— */
+.places {
+  display: grid;
+  grid-template-rows: 42vh 1fr;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.places-map {
+  width: 100%;
+  height: 100%;
+  min-height: 240px;
+  background: #0a1210;
+  z-index: 0;
+}
+
+.places-top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 500;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: max(0.85rem, env(safe-area-inset-top)) 1rem 0.5rem;
+  pointer-events: none;
+}
+
+.places-top > * {
+  pointer-events: auto;
+}
+
+.places-panel {
+  position: relative;
+  z-index: 2;
+  overflow: auto;
+  padding: 1rem 1rem max(1.2rem, env(safe-area-inset-bottom));
+  background: linear-gradient(to bottom, #101a17, var(--bg));
+  border-top: 1px solid rgba(232, 239, 233, 0.08);
+}
+
+.places-head h1 {
+  margin: 0 0 0.35rem;
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  letter-spacing: -0.03em;
+}
+
+.places-head p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.places-status {
+  margin-top: 0.55rem !important;
+  color: var(--now) !important;
+  font-size: 0.8rem !important;
+}
+
+.place-card {
+  margin-top: 0.85rem;
+  padding: 0.8rem 0.85rem;
+  border-radius: 14px;
+  background: rgba(21, 32, 28, 0.9);
+  border: 1px solid rgba(226, 168, 107, 0.28);
+  animation: rise-in 0.35s ease both;
+}
+
+.place-card h2 {
+  margin: 0.15rem 0 0.35rem;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+}
+
+.place-card p {
+  margin: 0.2rem 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+.place-kicker {
+  color: var(--accent) !important;
+  font-size: 0.7rem !important;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.place-meta {
+  color: var(--muted) !important;
+  font-size: 0.75rem !important;
+}
+
+.places-list {
+  margin-top: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.place-row {
+  appearance: none;
+  border: 1px solid rgba(232, 239, 233, 0.08);
+  background: rgba(21, 32, 28, 0.65);
+  color: inherit;
+  border-radius: 12px;
+  padding: 0.7rem 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.place-row.is-active {
+  border-color: rgba(226, 168, 107, 0.45);
+  background: rgba(226, 168, 107, 0.1);
+}
+
+.place-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.place-row-text strong {
+  font-size: 0.9rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.place-row-text small {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.place-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.place-dot.curated,
+.map-pin.curated span {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(226, 168, 107, 0.25);
+}
+
+.place-dot.hotspot,
+.map-pin.hotspot span {
+  background: var(--now);
+  box-shadow: 0 0 0 3px rgba(126, 200, 184, 0.2);
+}
+
+.map-pin {
+  background: transparent !important;
+  border: 0 !important;
+}
+
+.map-pin span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+}
+
+.map-pin.nearby span {
+  background: rgba(232, 239, 233, 0.55);
+}
+
+.map-pin.user span {
+  background: #fff;
+  box-shadow: 0 0 0 4px rgba(126, 200, 184, 0.45);
+}
+
+.leaflet-container {
+  font: inherit;
+  background: #0a1210;
+}
