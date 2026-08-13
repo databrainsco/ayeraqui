@@ -1,0 +1,13 @@
+:root {
+  font-family: 'Figtree', system-ui, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: #0c1412;
+  color: #e8efe9;
+}
