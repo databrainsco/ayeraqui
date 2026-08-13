@@ -651,9 +651,11 @@ a {
   cursor: default;
 }
 
-.btn-mini.link {
-  color: var(--now);
-  border-color: rgba(126, 200, 184, 0.35);
+.btn-mini.save {
+  background: rgba(226, 168, 107, 0.22);
+  border-color: rgba(226, 168, 107, 0.45);
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .radius-row {

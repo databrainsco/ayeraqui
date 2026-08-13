@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { CameraView } from './components/CameraView'
+import {
+  CameraView,
+  type CameraViewHandle,
+} from './components/CameraView'
 import { DecadeStrip } from './components/DecadeStrip'
 import {
   HistoricOverlay,
@@ -16,6 +19,10 @@ import {
   listUserPhotos,
   userRecordToHistoric,
 } from './lib/userPhotos'
+import {
+  composeOverlayFrame,
+  saveBlobToDevice,
+} from './lib/captureOverlay'
 import {
   formatDistance,
   getCurrentPosition,
@@ -51,7 +58,9 @@ export default function App() {
   const [infoOpen, setInfoOpen] = useState(false)
   /** null = cámara limpia, sin overlay */
   const [selectedPageId, setSelectedPageId] = useState<number | null>(null)
+  const [savingCapture, setSavingCapture] = useState(false)
   const skipWatchReload = useRef(false)
+  const cameraRef = useRef<CameraViewHandle>(null)
 
   const groups = useMemo(() => groupByDecade(photos), [photos])
 
@@ -333,6 +342,47 @@ export default function App() {
     selectPhoto(decadePhotos[next] ?? null)
   }
 
+  const saveOverlay = useCallback(async () => {
+    if (!activePhoto) {
+      setStatus('Elige primero una foto para guardar el solapamiento.')
+      return
+    }
+    const video = cameraRef.current?.getVideo()
+    if (!video || !video.videoWidth) {
+      setStatus('Espera a que la cámara esté lista.')
+      return
+    }
+    setSavingCapture(true)
+    setStatus('Guardando solapamiento…')
+    try {
+      const blob = await composeOverlayFrame({
+        video,
+        historicUrl: activePhoto.fullUrl,
+        opacity,
+        align,
+      })
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+      const result = await saveBlobToDevice(
+        blob,
+        `ayeraqui-${stamp}.jpg`,
+      )
+      if (result === 'cancelled') {
+        setStatus(null)
+      } else if (result === 'shared') {
+        setStatus('Solapamiento compartido / guardado.')
+      } else {
+        setStatus('Solapamiento descargado en tu dispositivo.')
+      }
+    } catch {
+      setError(
+        'No se pudo guardar. Si la foto es de Commons, puede bloquear CORS; prueba una foto curada o tuya.',
+      )
+      setStatus(null)
+    } finally {
+      setSavingCapture(false)
+    }
+  }, [activePhoto, opacity, align])
+
   if (screen === 'places') {
     return (
       <PlacesMap
@@ -391,7 +441,7 @@ export default function App() {
 
   return (
     <div className="shell experience">
-      <CameraView active onError={setCameraError} />
+      <CameraView ref={cameraRef} active onError={setCameraError} />
       <HistoricOverlay
         photo={activePhoto}
         opacity={opacity}
@@ -520,6 +570,14 @@ export default function App() {
             )}
 
             <div className="photo-actions">
+              <button
+                type="button"
+                className="btn-mini save"
+                onClick={() => void saveOverlay()}
+                disabled={savingCapture}
+              >
+                {savingCapture ? 'Guardando…' : 'Guardar solapamiento'}
+              </button>
               <button
                 type="button"
                 className="btn-mini"
