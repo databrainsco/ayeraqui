@@ -21,6 +21,8 @@ export type HistoricPhoto = {
   context?: string | null
   credit?: string | null
   curated?: boolean
+  matchRadiusM?: number
+  align?: { scale: number; x: number; y: number }
 }
 
 export type DecadeGroup = {

@@ -1,24 +1,32 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { BeforeAfterSlider } from './components/BeforeAfterSlider'
 import { CameraView } from './components/CameraView'
 import { DecadeStrip } from './components/DecadeStrip'
+import {
+  HistoricOverlay,
+  type OverlayAlign,
+} from './components/HistoricOverlay'
 import {
   fetchHistoricPhotosNearby,
   groupByDecade,
   type HistoricPhoto,
 } from './lib/commonsApi'
-import { featuredExample } from './lib/curated'
+import { featuredHeroUrl, nearestCuratedHint } from './lib/curated'
 import {
   formatDistance,
   getCurrentPosition,
   GeoError,
+  watchPosition,
   type GeoPosition,
 } from './lib/geolocation'
 import './App.css'
 
 type Screen = 'home' | 'experience'
 
-const RADII = [300, 500, 1000, 2500, 5000] as const
+/** Radios cortos: la foto solo aparece si estás cerca del punto. */
+const RADII = [50, 90, 150, 250, 400] as const
+
+const defaultAlign = (photo: HistoricPhoto | null): OverlayAlign =>
+  photo?.align ?? { scale: 1, x: 0, y: 0 }
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('home')
@@ -27,16 +35,17 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [position, setPosition] = useState<GeoPosition | null>(null)
   const [photos, setPhotos] = useState<HistoricPhoto[]>([])
-  const [radius, setRadius] = useState<(typeof RADII)[number]>(500)
+  const [radius, setRadius] = useState<(typeof RADII)[number]>(90)
   const [activeDecade, setActiveDecade] = useState<number | null | undefined>(
     undefined,
   )
   const [photoIndex, setPhotoIndex] = useState(0)
-  const [reveal, setReveal] = useState(0.55)
+  const [opacity, setOpacity] = useState(0.55)
+  const [align, setAlign] = useState<OverlayAlign>({ scale: 1, x: 0, y: 0 })
   const [cameraError, setCameraError] = useState<string | null>(null)
-  const [infoOpen, setInfoOpen] = useState(true)
+  const [infoOpen, setInfoOpen] = useState(false)
 
-  const featured = useMemo(() => featuredExample(position), [position])
+  const heroUrl = useMemo(() => featuredHeroUrl(), [])
 
   const groups = useMemo(() => groupByDecade(photos), [photos])
 
@@ -50,23 +59,33 @@ export default function App() {
 
   const loadNearby = useCallback(async (pos: GeoPosition, r: number) => {
     setBusy(true)
-    setStatus('Buscando fotos históricas cerca…')
+    setStatus('Buscando fotos en tu punto exacto…')
     setError(null)
     try {
       const found = await fetchHistoricPhotosNearby(pos.lat, pos.lon, r)
       setPhotos(found)
       setPhotoIndex(0)
       setActiveDecade(undefined)
-      setInfoOpen(true)
+
       if (!found.length) {
-        setStatus(
-          `No hay fotos en ${r} m. Prueba ampliar el radio o muévete un poco.`,
-        )
+        const hint = nearestCuratedHint(pos)
+        if (hint && hint.distanceM > hint.matchRadiusM) {
+          setStatus(
+            `Estás a ${formatDistance(hint.distanceM)} del punto de «${hint.title}». Acércate a menos de ${hint.matchRadiusM} m.`,
+          )
+        } else {
+          setStatus(
+            `No hay fotos históricas a menos de ${r} m. Acércate al lugar o amplía un poco el radio.`,
+          )
+        }
       } else {
         setStatus(null)
+        setOpacity(0.55)
+        setAlign(defaultAlign(found[0]))
+        setInfoOpen(Boolean(found[0]?.curated))
       }
     } catch {
-      setError('No pudimos cargar fotos de Wikimedia Commons. Intenta de nuevo.')
+      setError('No pudimos cargar fotos cercanas. Intenta de nuevo.')
       setStatus(null)
     } finally {
       setBusy(false)
@@ -77,7 +96,7 @@ export default function App() {
     setBusy(true)
     setError(null)
     setCameraError(null)
-    setStatus('Obteniendo tu ubicación…')
+    setStatus('Obteniendo ubicación precisa…')
     try {
       const pos = await getCurrentPosition()
       setPosition(pos)
@@ -94,55 +113,40 @@ export default function App() {
     }
   }, [loadNearby, radius])
 
-  const startFeaturedExample = useCallback(async () => {
-    setBusy(true)
-    setError(null)
-    setCameraError(null)
-    setStatus('Cargando ejemplo UNAM 1950s…')
-    try {
-      let pos: GeoPosition
-      try {
-        pos = await getCurrentPosition()
-      } catch {
-        pos = {
-          lat: featured.lat,
-          lon: featured.lon,
-          accuracy: 0,
-        }
-      }
+  // Seguir GPS en vivo para activar/desactivar overlay al acercarte
+  useEffect(() => {
+    if (screen !== 'experience') return
+    let lastFetch = 0
+    const stop = watchPosition((pos) => {
       setPosition(pos)
-      const example = featuredExample(pos)
-      setPhotos([example])
-      setActiveDecade(1950)
-      setPhotoIndex(0)
-      setReveal(0.55)
-      setInfoOpen(true)
-      setStatus(null)
-      setScreen('experience')
-    } catch {
-      setError('No pudimos abrir el ejemplo.')
-      setStatus(null)
-    } finally {
-      setBusy(false)
-    }
-  }, [featured.lat, featured.lon])
+      const now = Date.now()
+      if (now - lastFetch < 8000) return
+      lastFetch = now
+      void loadNearby(pos, radius)
+    })
+    return stop
+  }, [screen, radius, loadNearby])
 
   useEffect(() => {
     if (screen !== 'experience' || !position) return
     void loadNearby(position, radius)
-  }, [radius]) // eslint-disable-line react-hooks/exhaustive-deps -- reload only on radius change
+  }, [radius]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!activePhoto) return
+    setAlign(defaultAlign(activePhoto))
+    setOpacity(0.55)
+  }, [activePhoto?.pageId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const onDecadeSelect = (decade: number | null) => {
     setActiveDecade(decade)
     setPhotoIndex(0)
-    setReveal(0.55)
     setInfoOpen(true)
   }
 
   const cyclePhoto = (dir: 1 | -1) => {
     if (decadePhotos.length < 2) return
     setPhotoIndex((i) => (i + dir + decadePhotos.length) % decadePhotos.length)
-    setReveal(0.55)
     setInfoOpen(true)
   }
 
@@ -151,14 +155,14 @@ export default function App() {
       <div className="shell home">
         <div className="home-atmosphere" aria-hidden />
         <div className="home-hero-photo" aria-hidden>
-          <img src={featured.fullUrl} alt="" />
+          <img src={heroUrl} alt="" />
         </div>
         <header className="home-brand">
           <p className="brand-mark">AyerAquí</p>
           <h1 className="brand-line">Mira cómo era este lugar</h1>
           <p className="brand-sub">
-            Abre la cámara. Según dónde estés, superponemos fotos históricas por
-            década.
+            La foto antigua solo aparece si estás cerca del punto exacto.
+            Superponla sobre la cámara y alinéala con el edificio.
           </p>
         </header>
         <div className="home-actions">
@@ -168,19 +172,11 @@ export default function App() {
             onClick={() => void start()}
             disabled={busy}
           >
-            {busy ? 'Preparando…' : 'Ver el antes aquí'}
-          </button>
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={() => void startFeaturedExample()}
-            disabled={busy}
-          >
-            Ejemplo UNAM · 1950s
+            {busy ? 'Preparando…' : 'Abrir cámara aquí'}
           </button>
           <p className="home-featured-note">
-            Primera imagen: mural de Siqueiros en Rectoría, Ciudad Universitaria
-            (1952–1956).
+            Ejemplo curado: mural de Siqueiros en Rectoría UNAM — se activa a
+            ~90 m del punto de vista en la plaza poniente.
           </p>
           {error && <p className="banner-error">{error}</p>}
           {status && !error && <p className="banner-status">{status}</p>}
@@ -193,10 +189,12 @@ export default function App() {
   return (
     <div className="shell experience">
       <CameraView active onError={setCameraError} />
-      <BeforeAfterSlider
+      <HistoricOverlay
         photo={activePhoto}
-        position={reveal}
-        onPositionChange={setReveal}
+        opacity={opacity}
+        onOpacityChange={setOpacity}
+        align={align}
+        onAlignChange={setAlign}
       />
 
       <div className="top-bar">
@@ -211,17 +209,25 @@ export default function App() {
         >
           AyerAquí
         </button>
-        {activePhoto && (
-          <span className="meta-pill">
-            {activePhoto.decade != null
-              ? `${activePhoto.decade}s`
-              : (activePhoto.year ?? '—')}{' '}
-            ·{' '}
-            {activePhoto.curated && activePhoto.distanceM > 5000
-              ? 'ejemplo'
-              : formatDistance(activePhoto.distanceM)}
-          </span>
-        )}
+        <div className="top-meta">
+          {position && (
+            <span className="meta-pill soft">
+              GPS ±{Math.round(position.accuracy)} m
+            </span>
+          )}
+          {activePhoto ? (
+            <span className="meta-pill">
+              {activePhoto.decade != null
+                ? `${activePhoto.decade}s`
+                : (activePhoto.year ?? '—')}{' '}
+              · {formatDistance(activePhoto.distanceM)}
+            </span>
+          ) : (
+            position && (
+              <span className="meta-pill soft">Sin foto en este punto</span>
+            )
+          )}
+        </div>
       </div>
 
       <div className="bottom-panel">
@@ -269,6 +275,14 @@ export default function App() {
                     {activePhoto.place}
                   </p>
                 )}
+                <p>
+                  <span>Coordenadas del punto</span>
+                  {activePhoto.lat.toFixed(5)}, {activePhoto.lon.toFixed(5)} · a{' '}
+                  {formatDistance(activePhoto.distanceM)}
+                  {activePhoto.matchRadiusM
+                    ? ` (activo bajo ${activePhoto.matchRadiusM} m)`
+                    : ''}
+                </p>
                 {activePhoto.context && (
                   <p>
                     <span>Contexto</span>
@@ -321,7 +335,7 @@ export default function App() {
                 onClick={() => setRadius(r)}
                 disabled={busy}
               >
-                {r >= 1000 ? `${r / 1000} km` : `${r} m`}
+                {r} m
               </button>
             ))}
           </div>

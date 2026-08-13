@@ -45,10 +45,40 @@ export function getCurrentPosition(): Promise<GeoPosition> {
       {
         enableHighAccuracy: true,
         timeout: 20000,
-        maximumAge: 30_000,
+        maximumAge: 5_000,
       },
     )
   })
+}
+
+export function watchPosition(
+  onUpdate: (pos: GeoPosition) => void,
+  onError?: (err: GeoError) => void,
+): () => void {
+  if (!('geolocation' in navigator)) {
+    onError?.(
+      new GeoError('unsupported', 'Este dispositivo no soporta geolocalización.'),
+    )
+    return () => undefined
+  }
+
+  const id = navigator.geolocation.watchPosition(
+    (pos) => {
+      onUpdate({
+        lat: pos.coords.latitude,
+        lon: pos.coords.longitude,
+        accuracy: pos.coords.accuracy,
+      })
+    },
+    (err) => onError?.(mapError(err)),
+    {
+      enableHighAccuracy: true,
+      timeout: 20000,
+      maximumAge: 3_000,
+    },
+  )
+
+  return () => navigator.geolocation.clearWatch(id)
 }
 
 /** Haversine distance in meters */
