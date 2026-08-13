@@ -7,6 +7,7 @@ import {
   groupByDecade,
   type HistoricPhoto,
 } from './lib/commonsApi'
+import { featuredExample } from './lib/curated'
 import {
   formatDistance,
   getCurrentPosition,
@@ -33,6 +34,9 @@ export default function App() {
   const [photoIndex, setPhotoIndex] = useState(0)
   const [reveal, setReveal] = useState(0.55)
   const [cameraError, setCameraError] = useState<string | null>(null)
+  const [infoOpen, setInfoOpen] = useState(true)
+
+  const featured = useMemo(() => featuredExample(position), [position])
 
   const groups = useMemo(() => groupByDecade(photos), [photos])
 
@@ -53,6 +57,7 @@ export default function App() {
       setPhotos(found)
       setPhotoIndex(0)
       setActiveDecade(undefined)
+      setInfoOpen(true)
       if (!found.length) {
         setStatus(
           `No hay fotos en ${r} m. Prueba ampliar el radio o muévete un poco.`,
@@ -89,6 +94,39 @@ export default function App() {
     }
   }, [loadNearby, radius])
 
+  const startFeaturedExample = useCallback(async () => {
+    setBusy(true)
+    setError(null)
+    setCameraError(null)
+    setStatus('Cargando ejemplo UNAM 1950s…')
+    try {
+      let pos: GeoPosition
+      try {
+        pos = await getCurrentPosition()
+      } catch {
+        pos = {
+          lat: featured.lat,
+          lon: featured.lon,
+          accuracy: 0,
+        }
+      }
+      setPosition(pos)
+      const example = featuredExample(pos)
+      setPhotos([example])
+      setActiveDecade(1950)
+      setPhotoIndex(0)
+      setReveal(0.55)
+      setInfoOpen(true)
+      setStatus(null)
+      setScreen('experience')
+    } catch {
+      setError('No pudimos abrir el ejemplo.')
+      setStatus(null)
+    } finally {
+      setBusy(false)
+    }
+  }, [featured.lat, featured.lon])
+
   useEffect(() => {
     if (screen !== 'experience' || !position) return
     void loadNearby(position, radius)
@@ -98,18 +136,23 @@ export default function App() {
     setActiveDecade(decade)
     setPhotoIndex(0)
     setReveal(0.55)
+    setInfoOpen(true)
   }
 
   const cyclePhoto = (dir: 1 | -1) => {
     if (decadePhotos.length < 2) return
     setPhotoIndex((i) => (i + dir + decadePhotos.length) % decadePhotos.length)
     setReveal(0.55)
+    setInfoOpen(true)
   }
 
   if (screen === 'home') {
     return (
       <div className="shell home">
         <div className="home-atmosphere" aria-hidden />
+        <div className="home-hero-photo" aria-hidden>
+          <img src={featured.fullUrl} alt="" />
+        </div>
         <header className="home-brand">
           <p className="brand-mark">AyerAquí</p>
           <h1 className="brand-line">Mira cómo era este lugar</h1>
@@ -127,10 +170,22 @@ export default function App() {
           >
             {busy ? 'Preparando…' : 'Ver el antes aquí'}
           </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => void startFeaturedExample()}
+            disabled={busy}
+          >
+            Ejemplo UNAM · 1950s
+          </button>
+          <p className="home-featured-note">
+            Primera imagen: mural de Siqueiros en Rectoría, Ciudad Universitaria
+            (1952–1956).
+          </p>
           {error && <p className="banner-error">{error}</p>}
           {status && !error && <p className="banner-status">{status}</p>}
         </div>
-        <p className="home-credit">Fotos vía Wikimedia Commons</p>
+        <p className="home-credit">Fotos curadas + Wikimedia Commons</p>
       </div>
     )
   }
@@ -158,7 +213,13 @@ export default function App() {
         </button>
         {activePhoto && (
           <span className="meta-pill">
-            {activePhoto.year ?? '—'} · {formatDistance(activePhoto.distanceM)}
+            {activePhoto.decade != null
+              ? `${activePhoto.decade}s`
+              : (activePhoto.year ?? '—')}{' '}
+            ·{' '}
+            {activePhoto.curated && activePhoto.distanceM > 5000
+              ? 'ejemplo'
+              : formatDistance(activePhoto.distanceM)}
           </span>
         )}
       </div>
@@ -178,9 +239,48 @@ export default function App() {
 
         {activePhoto && (
           <div className="photo-meta">
-            <p className="photo-title" title={activePhoto.title}>
-              {activePhoto.title}
-            </p>
+            <div className="photo-meta-head">
+              <p className="photo-title" title={activePhoto.title}>
+                {activePhoto.title}
+              </p>
+              {(activePhoto.context || activePhoto.work) && (
+                <button
+                  type="button"
+                  className="btn-mini"
+                  onClick={() => setInfoOpen((v) => !v)}
+                >
+                  {infoOpen ? 'Ocultar ficha' : 'Ver ficha'}
+                </button>
+              )}
+            </div>
+
+            {infoOpen && (activePhoto.context || activePhoto.work) && (
+              <div className="photo-fiche">
+                {activePhoto.work && (
+                  <p>
+                    <span>Obra</span>
+                    {activePhoto.work}
+                    {activePhoto.artist ? ` — ${activePhoto.artist}` : ''}
+                  </p>
+                )}
+                {activePhoto.place && (
+                  <p>
+                    <span>Ubicación</span>
+                    {activePhoto.place}
+                  </p>
+                )}
+                {activePhoto.context && (
+                  <p>
+                    <span>Contexto</span>
+                    {activePhoto.context}
+                  </p>
+                )}
+                {activePhoto.credit && (
+                  <p className="photo-credit">{activePhoto.credit}</p>
+                )}
+              </div>
+            )}
+
             <div className="photo-actions">
               <button
                 type="button"

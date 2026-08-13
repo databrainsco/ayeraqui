@@ -8,7 +8,11 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
+      includeAssets: [
+        'favicon.svg',
+        'apple-touch-icon.png',
+        'curated/unam-rectoria-siqueiros-1950s.png',
+      ],
       manifest: {
         name: 'AyerAquí',
         short_name: 'AyerAquí',

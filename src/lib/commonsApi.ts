@@ -1,4 +1,5 @@
 import { distanceMeters } from './geolocation'
+import { curatedNearby } from './curated'
 
 const API = 'https://commons.wikimedia.org/w/api.php'
 
@@ -15,6 +16,11 @@ export type HistoricPhoto = {
   artist: string | null
   license: string | null
   descriptionUrl: string
+  place?: string | null
+  work?: string | null
+  context?: string | null
+  credit?: string | null
+  curated?: boolean
 }
 
 export type DecadeGroup = {
@@ -175,13 +181,32 @@ async function enrichPages(
   return photos.sort((a, b) => a.distanceM - b.distanceM)
 }
 
+function mergePhotos(
+  curated: HistoricPhoto[],
+  remote: HistoricPhoto[],
+): HistoricPhoto[] {
+  const seen = new Set(curated.map((p) => p.fullUrl))
+  const rest = remote.filter((p) => !seen.has(p.fullUrl))
+  return [...curated, ...rest]
+}
+
 export async function fetchHistoricPhotosNearby(
   lat: number,
   lon: number,
   radiusM = 500,
 ): Promise<HistoricPhoto[]> {
+  const curated = curatedNearby({ lat, lon }, radiusM)
   const hits = await geoSearch(lat, lon, radiusM)
-  return enrichPages(hits, { lat, lon })
+  const remote = await enrichPages(hits, { lat, lon })
+  return mergePhotos(curated, remote)
+}
+
+function sortPhotos(photos: HistoricPhoto[]): HistoricPhoto[] {
+  return [...photos].sort((a, b) => {
+    if (a.curated && !b.curated) return -1
+    if (!a.curated && b.curated) return 1
+    return a.distanceM - b.distanceM
+  })
 }
 
 export function groupByDecade(photos: HistoricPhoto[]): DecadeGroup[] {
@@ -202,6 +227,6 @@ export function groupByDecade(photos: HistoricPhoto[]): DecadeGroup[] {
   return decades.map((decade) => ({
     decade,
     label: decade == null ? 'Sin fecha' : `${decade}s`,
-    photos: (map.get(decade) ?? []).sort((a, b) => a.distanceM - b.distanceM),
+    photos: sortPhotos(map.get(decade) ?? []),
   }))
 }
