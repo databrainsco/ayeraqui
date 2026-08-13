@@ -290,7 +290,10 @@ export default function App() {
           {error && <p className="banner-error">{error}</p>}
           {status && !error && <p className="banner-status">{status}</p>}
         </div>
-        <p className="home-credit">Fotos curadas + Wikimedia Commons</p>
+        <p className="home-credit">
+          Fotos curadas + Wikimedia Commons
+          <span className="app-version">v{__APP_VERSION__}</span>
+        </p>
       </div>
     )
   }
