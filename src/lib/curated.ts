@@ -6,7 +6,7 @@ const asset = (path: string) =>
 
 /**
  * Fotos curadas con punto de vista preciso.
- * Solo aparecen si el usuario está dentro de matchRadiusM del lat/lon.
+ * Siempre se pueden ver; el GPS indica distancia al lugar real.
  */
 export type CuratedSeed = {
   id: string
@@ -14,7 +14,7 @@ export type CuratedSeed = {
   /** Punto de vista aproximado desde donde se tomó / se alinea la foto */
   lat: number
   lon: number
-  /** Radio estricto (metros) para activar esta foto */
+  /** Radio ideal (metros) para alinear in situ */
   matchRadiusM: number
   year: number
   decade: number
@@ -84,21 +84,34 @@ export function curatedToPhoto(
   }
 }
 
-/** Solo si estás dentro del radio del punto de vista (no “todo México”). */
+/** Siempre incluye fotos curadas (aunque estés lejos); ordena por cercanía. */
 export function curatedNearby(
   user: { lat: number; lon: number },
-  searchRadiusM: number,
+  _searchRadiusM: number,
 ): HistoricPhoto[] {
-  return CURATED_SEEDS.map((seed) => curatedToPhoto(seed, user))
-    .filter((p) => {
-      const limit = Math.min(searchRadiusM, p.matchRadiusM ?? 80)
-      return p.distanceM <= limit
-    })
-    .sort((a, b) => a.distanceM - b.distanceM)
+  return CURATED_SEEDS.map((seed) => curatedToPhoto(seed, user)).sort(
+    (a, b) => a.distanceM - b.distanceM,
+  )
+}
+
+export function curatedById(
+  id: string,
+  user: { lat: number; lon: number },
+): HistoricPhoto | null {
+  const seed = CURATED_SEEDS.find((s) => s.id === id)
+  return seed ? curatedToPhoto(seed, user) : null
 }
 
 export function featuredHeroUrl(): string {
   return asset(CURATED_SEEDS[0].imagePath)
+}
+
+export function featuredExample(
+  user?: { lat: number; lon: number } | null,
+): HistoricPhoto {
+  const seed = CURATED_SEEDS[0]
+  const ref = user ?? { lat: seed.lat, lon: seed.lon }
+  return curatedToPhoto(seed, ref)
 }
 
 export function nearestCuratedHint(user: {

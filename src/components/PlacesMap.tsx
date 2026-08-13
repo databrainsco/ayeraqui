@@ -9,6 +9,7 @@ type Props = {
   user: GeoPosition | null
   onBack: () => void
   onLocate: () => void
+  onOpenCurated?: (curatedId: string) => void
   locating?: boolean
 }
 
@@ -40,7 +41,13 @@ const userIcon = L.divIcon({
   iconAnchor: [8, 8],
 })
 
-export function PlacesMap({ user, onBack, onLocate, locating }: Props) {
+export function PlacesMap({
+  user,
+  onBack,
+  onLocate,
+  onOpenCurated,
+  locating,
+}: Props) {
   const mapEl = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
   const layerRef = useRef<L.LayerGroup | null>(null)
@@ -198,7 +205,7 @@ export function PlacesMap({ user, onBack, onLocate, locating }: Props) {
             </p>
             <p>{selected.blurb}</p>
             <p className="place-meta">
-              {selected.lat.toFixed(5)}, {selected.lon.toFixed(5)} · activa ~{' '}
+              {selected.lat.toFixed(5)}, {selected.lon.toFixed(5)} · punto ~{' '}
               {selected.matchRadiusM} m
               {user
                 ? ` · a ${formatDistance(
@@ -207,6 +214,15 @@ export function PlacesMap({ user, onBack, onLocate, locating }: Props) {
                   )}`
                 : ''}
             </p>
+            {selected.kind === 'curated' && selected.curatedId && onOpenCurated && (
+              <button
+                type="button"
+                className="btn-primary place-open"
+                onClick={() => onOpenCurated(selected.curatedId!)}
+              >
+                Ver foto ahora
+              </button>
+            )}
           </div>
         )}
 

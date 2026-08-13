@@ -11,7 +11,7 @@ import {
   groupByDecade,
   type HistoricPhoto,
 } from './lib/commonsApi'
-import { featuredHeroUrl, nearestCuratedHint } from './lib/curated'
+import { featuredExample, featuredHeroUrl, curatedById } from './lib/curated'
 import {
   formatDistance,
   getCurrentPosition,
@@ -60,7 +60,7 @@ export default function App() {
 
   const loadNearby = useCallback(async (pos: GeoPosition, r: number) => {
     setBusy(true)
-    setStatus('Buscando fotos en tu punto exacto…')
+    setStatus('Buscando fotos…')
     setError(null)
     try {
       const found = await fetchHistoricPhotosNearby(pos.lat, pos.lon, r)
@@ -68,19 +68,24 @@ export default function App() {
       setPhotoIndex(0)
       setActiveDecade(undefined)
 
-      if (!found.length) {
-        const hint = nearestCuratedHint(pos)
-        if (hint && hint.distanceM > hint.matchRadiusM) {
+      const firstCurated = found.find((p) => p.curated)
+      if (firstCurated && firstCurated.matchRadiusM != null) {
+        if (firstCurated.distanceM > firstCurated.matchRadiusM) {
           setStatus(
-            `Estás a ${formatDistance(hint.distanceM)} del punto de «${hint.title}». Acércate a menos de ${hint.matchRadiusM} m.`,
+            `Vista previa · estás a ${formatDistance(firstCurated.distanceM)} del punto (ideal bajo ${firstCurated.matchRadiusM} m)`,
           )
         } else {
-          setStatus(
-            `No hay fotos históricas a menos de ${r} m. Acércate al lugar o amplía un poco el radio.`,
-          )
+          setStatus(null)
         }
+      } else if (!found.length) {
+        setStatus(
+          `No hay fotos históricas a menos de ${r} m. Amplía el radio o prueba un lugar del mapa.`,
+        )
       } else {
         setStatus(null)
+      }
+
+      if (found.length) {
         setOpacity(0.55)
         setAlign(defaultAlign(found[0]))
         setInfoOpen(Boolean(found[0]?.curated))
@@ -93,6 +98,47 @@ export default function App() {
     }
   }, [])
 
+  const openCuratedPhoto = useCallback(
+    async (curatedId?: string) => {
+      setBusy(true)
+      setError(null)
+      setCameraError(null)
+      setStatus('Abriendo foto…')
+      try {
+        let pos: GeoPosition
+        try {
+          pos = await getCurrentPosition()
+        } catch {
+          const seed = featuredExample()
+          pos = { lat: seed.lat, lon: seed.lon, accuracy: 0 }
+        }
+        setPosition(pos)
+        const photo =
+          (curatedId ? curatedById(curatedId, pos) : null) ??
+          featuredExample(pos)
+        setPhotos([photo])
+        setActiveDecade(photo.decade)
+        setPhotoIndex(0)
+        setOpacity(0.55)
+        setAlign(defaultAlign(photo))
+        setInfoOpen(true)
+        if (photo.matchRadiusM != null && photo.distanceM > photo.matchRadiusM) {
+          setStatus(
+            `Vista previa · estás a ${formatDistance(photo.distanceM)} del lugar`,
+          )
+        } else {
+          setStatus(null)
+        }
+        setScreen('experience')
+      } catch {
+        setError('No pudimos abrir la foto.')
+        setStatus(null)
+      } finally {
+        setBusy(false)
+      }
+    },
+    [],
+  )
   const start = useCallback(async () => {
     setBusy(true)
     setError(null)
@@ -175,6 +221,7 @@ export default function App() {
         locating={busy}
         onBack={() => setScreen('home')}
         onLocate={() => void locateForMap()}
+        onOpenCurated={(curatedId) => void openCuratedPhoto(curatedId)}
       />
     )
   }
@@ -190,8 +237,8 @@ export default function App() {
           <p className="brand-mark">AyerAquí</p>
           <h1 className="brand-line">Mira cómo era este lugar</h1>
           <p className="brand-sub">
-            La foto antigua solo aparece si estás cerca del punto exacto.
-            Superponla sobre la cámara y alinéala con el edificio.
+            Superpone fotos históricas sobre la cámara. Las curadas se pueden
+            ver aunque no estés en el lugar; in situ se alinean mejor.
           </p>
         </header>
         <div className="home-actions">
@@ -206,6 +253,14 @@ export default function App() {
           <button
             type="button"
             className="btn-secondary"
+            onClick={() => void openCuratedPhoto()}
+            disabled={busy}
+          >
+            Ver foto UNAM 1950s
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
             onClick={() => {
               setError(null)
               setScreen('places')
@@ -214,8 +269,8 @@ export default function App() {
             Mapa de lugares
           </button>
           <p className="home-featured-note">
-            Ejemplo curado: mural de Siqueiros en Rectoría UNAM — se activa a
-            ~90 m del punto de vista en la plaza poniente.
+            La foto de Rectoría se muestra siempre; el GPS solo indica a qué
+            distancia estás del punto real.
           </p>
           {error && <p className="banner-error">{error}</p>}
           {status && !error && <p className="banner-status">{status}</p>}
