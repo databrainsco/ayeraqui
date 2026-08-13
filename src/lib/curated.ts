@@ -50,7 +50,7 @@ export const CURATED_SEEDS: CuratedSeed[] = [
     license: 'Archivo histórico',
     imagePath: 'curated/unam-rectoria-siqueiros-1950s.png',
     sourceUrl: 'https://www.unam.mx/',
-    align: { scale: 1.08, x: 0, y: -4 },
+    align: { scale: 1, x: 0, y: 0 },
   },
 ]
 
