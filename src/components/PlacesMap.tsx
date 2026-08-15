@@ -3,7 +3,11 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { placesWithDistance, type MapPlace } from '../lib/places'
 import { formatDistance, type GeoPosition } from '../lib/geolocation'
-import { fetchHistoricPhotosNearby, type HistoricPhoto } from '../lib/commonsApi'
+import {
+  fetchHistoricPhotosNearby,
+  groupByDecade,
+  type HistoricPhoto,
+} from '../lib/commonsApi'
 import {
   deleteUserPhoto,
   listUserPhotos,
@@ -21,6 +25,7 @@ type Props = {
     lat: number
     lon: number
     name: string
+    decade?: number | null
   }) => void
   onOpenUserPhoto?: (photoId: string) => void
   locating?: boolean
@@ -61,6 +66,104 @@ const userIcon = L.divIcon({
   iconAnchor: [8, 8],
 })
 
+type PlaceCameraTarget = {
+  lat: number
+  lon: number
+  name: string
+  decade?: number | null
+}
+
+function PlacePreview({
+  place,
+  user,
+  decadeGroups,
+  photosStatus,
+  onOpenPlaceCamera,
+  onOpenCurated,
+  compact,
+}: {
+  place: MapPlace
+  user: GeoPosition | null
+  decadeGroups: ReturnType<typeof groupByDecade>
+  photosStatus: string | null
+  onOpenPlaceCamera?: (place: PlaceCameraTarget) => void
+  onOpenCurated?: (curatedId: string) => void
+  compact?: boolean
+}) {
+  const distance = user
+    ? formatDistance(placesWithDistance(user).find((p) => p.id === place.id)?.distanceM ?? 0)
+    : null
+
+  return (
+    <div className={`place-card ${compact ? 'is-map' : 'is-inline'}`}>
+      <p className="place-kicker">
+        {place.kind === 'curated' ? 'Curado en AyerAquí' : 'Hotspot Commons'} ·{' '}
+        {place.decadeHint}
+      </p>
+      <h2>{place.name}</h2>
+      <p>
+        {place.city}, {place.country}
+      </p>
+      {!compact && <p>{place.blurb}</p>}
+      <p className="place-meta">
+        {place.lat.toFixed(5)}, {place.lon.toFixed(5)}
+        {distance ? ` · a ${distance}` : ''}
+      </p>
+
+      <p className="place-decades-label">Décadas</p>
+      {photosStatus && <p className="place-meta">{photosStatus}</p>}
+      {decadeGroups.length > 0 && (
+        <div className="place-decade-chips">
+          {decadeGroups.map((group) => (
+            <button
+              key={String(group.decade)}
+              type="button"
+              className="decade-chip"
+              onClick={() =>
+                onOpenPlaceCamera?.({
+                  lat: place.lat,
+                  lon: place.lon,
+                  name: place.name,
+                  decade: group.decade,
+                })
+              }
+            >
+              {group.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="place-card-actions">
+        {onOpenPlaceCamera && (
+          <button
+            type="button"
+            className="btn-primary place-open"
+            onClick={() =>
+              onOpenPlaceCamera({
+                lat: place.lat,
+                lon: place.lon,
+                name: place.name,
+              })
+            }
+          >
+            Abrir en cámara
+          </button>
+        )}
+        {place.kind === 'curated' && place.curatedId && onOpenCurated && (
+          <button
+            type="button"
+            className="btn-secondary place-open"
+            onClick={() => onOpenCurated(place.curatedId!)}
+          >
+            Ver foto curada
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function PlacesMap({
   user,
   onBack,
@@ -74,6 +177,11 @@ export function PlacesMap({
   const mapRef = useRef<L.Map | null>(null)
   const layerRef = useRef<L.LayerGroup | null>(null)
   const [selected, setSelected] = useState<MapPlace | null>(null)
+  const [mapCardPos, setMapCardPos] = useState<{ x: number; y: number; above: boolean } | null>(
+    null,
+  )
+  const [placePhotos, setPlacePhotos] = useState<HistoricPhoto[]>([])
+  const [placePhotosStatus, setPlacePhotosStatus] = useState<string | null>(null)
   const [nearby, setNearby] = useState<HistoricPhoto[]>([])
   const [nearbyStatus, setNearbyStatus] = useState<string | null>(null)
   const [mine, setMine] = useState<UserPhotoRecord[]>([])
@@ -88,6 +196,7 @@ export function PlacesMap({
   const [file, setFile] = useState<File | null>(null)
 
   const ranked = useMemo(() => placesWithDistance(user), [user])
+  const decadeGroups = useMemo(() => groupByDecade(placePhotos), [placePhotos])
   const didCenterOnUser = useRef(false)
 
   const refreshMine = async () => {
@@ -143,7 +252,11 @@ export function PlacesMap({
       map.invalidateSize()
     })
 
+    const onMapClick = () => setSelected(null)
+    map.on('click', onMapClick)
+
     return () => {
+      map.off('click', onMapClick)
       map.remove()
       mapRef.current = null
       layerRef.current = null
@@ -167,9 +280,10 @@ export function PlacesMap({
         icon: place.kind === 'curated' ? curatedIcon : hotspotIcon,
       })
       marker.bindTooltip(place.name, { direction: 'top', offset: [0, -8] })
-      marker.on('click', () => {
-        setSelected(place)
-        map.flyTo([place.lat, place.lon], 16, { duration: 0.7 })
+      marker.on('click', (ev) => {
+        L.DomEvent.stopPropagation(ev)
+        setSelected((current) => (current?.id === place.id ? null : place))
+        map.panTo([place.lat, place.lon])
       })
       marker.addTo(layer)
     }
@@ -228,9 +342,60 @@ export function PlacesMap({
     }
   }, [user?.lat, user?.lon])
 
+  useEffect(() => {
+    const map = mapRef.current
+    const wrap = mapEl.current
+    if (!map || !wrap || !selected) {
+      setMapCardPos(null)
+      return
+    }
+    const sync = () => {
+      const pt = map.latLngToContainerPoint([selected.lat, selected.lon])
+      const w = wrap.clientWidth
+      const h = wrap.clientHeight
+      const x = Math.min(w - 20, Math.max(20, pt.x))
+      const y = Math.min(h - 12, Math.max(12, pt.y))
+      setMapCardPos({ x, y, above: pt.y > 168 })
+    }
+    sync()
+    map.on('move zoom', sync)
+    return () => {
+      map.off('move zoom', sync)
+    }
+  }, [selected])
+
+  useEffect(() => {
+    if (!selected) {
+      setPlacePhotos([])
+      setPlacePhotosStatus(null)
+      return
+    }
+    let cancelled = false
+    setPlacePhotos([])
+    setPlacePhotosStatus('Buscando décadas…')
+    void fetchHistoricPhotosNearby(
+      selected.lat,
+      selected.lon,
+      Math.max(selected.matchRadiusM, 250),
+    ).then((photos) => {
+      if (cancelled) return
+      setPlacePhotos(photos)
+      setPlacePhotosStatus(
+        photos.length
+          ? null
+          : 'Aún no hay fotos históricas cerca de este punto',
+      )
+    }).catch(() => {
+      if (!cancelled) setPlacePhotosStatus('No se pudieron cargar las décadas')
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [selected?.id])
+
   const focusPlace = (place: MapPlace) => {
-    setSelected(place)
-    mapRef.current?.flyTo([place.lat, place.lon], 16, { duration: 0.7 })
+    setSelected((current) => (current?.id === place.id ? null : place))
+    mapRef.current?.panTo([place.lat, place.lon])
   }
 
   const onSaveMine = async () => {
@@ -290,7 +455,25 @@ export function PlacesMap({
 
   return (
     <div className="shell places">
-      <div className="places-map" ref={mapEl} />
+      <div className="places-map-wrap">
+        <div className="places-map" ref={mapEl} />
+        {selected && mapCardPos && (
+          <div
+            className={`place-map-card ${mapCardPos.above ? 'is-above' : 'is-below'}`}
+            style={{ left: mapCardPos.x, top: mapCardPos.y }}
+          >
+            <PlacePreview
+              place={selected}
+              user={user}
+              decadeGroups={decadeGroups}
+              photosStatus={placePhotosStatus}
+              onOpenPlaceCamera={onOpenPlaceCamera}
+              onOpenCurated={onOpenCurated}
+              compact
+            />
+          </div>
+        )}
+      </div>
 
       <div className="places-top">
         <button type="button" className="btn-ghost" onClick={onBack}>
@@ -407,57 +590,6 @@ export function PlacesMap({
           </div>
         )}
 
-        {selected && (
-          <div className="place-card selected">
-            <p className="place-kicker">
-              {selected.kind === 'curated' ? 'Curado en AyerAquí' : 'Hotspot Commons'}{' '}
-              · {selected.decadeHint}
-            </p>
-            <h2>{selected.name}</h2>
-            <p>
-              {selected.city}, {selected.country}
-            </p>
-            <p>{selected.blurb}</p>
-            <p className="place-meta">
-              {selected.lat.toFixed(5)}, {selected.lon.toFixed(5)}
-              {user
-                ? ` · a ${formatDistance(
-                    placesWithDistance(user).find((p) => p.id === selected.id)
-                      ?.distanceM ?? 0,
-                  )}`
-                : ''}
-            </p>
-            <div className="place-card-actions">
-              {onOpenPlaceCamera && (
-                <button
-                  type="button"
-                  className="btn-primary place-open"
-                  onClick={() =>
-                    onOpenPlaceCamera({
-                      lat: selected.lat,
-                      lon: selected.lon,
-                      name: selected.name,
-                    })
-                  }
-                >
-                  Abrir en cámara
-                </button>
-              )}
-              {selected.kind === 'curated' &&
-                selected.curatedId &&
-                onOpenCurated && (
-                  <button
-                    type="button"
-                    className="btn-secondary place-open"
-                    onClick={() => onOpenCurated(selected.curatedId!)}
-                  >
-                    Ver foto curada
-                  </button>
-                )}
-            </div>
-          </div>
-        )}
-
         {mine.length > 0 && (
           <div className="mine-list">
             <h3>Mis fotos en este celular</h3>
@@ -498,25 +630,39 @@ export function PlacesMap({
 
         <div className="places-list">
           {ranked.map((place) => (
-            <button
+            <div
               key={place.id}
-              type="button"
-              className={`place-row ${selected?.id === place.id ? 'is-active' : ''}`}
-              onClick={() => focusPlace(place)}
+              className={`place-item ${selected?.id === place.id ? 'is-open' : ''}`}
             >
-              <span
-                className={`place-dot ${place.kind === 'curated' ? 'curated' : 'hotspot'}`}
-              />
-              <span className="place-row-text">
-                <strong>{place.name}</strong>
-                <small>
-                  {place.city} · {place.decadeHint}
-                  {place.distanceM != null
-                    ? ` · ${formatDistance(place.distanceM)}`
-                    : ''}
-                </small>
-              </span>
-            </button>
+              <button
+                type="button"
+                className={`place-row ${selected?.id === place.id ? 'is-active' : ''}`}
+                onClick={() => focusPlace(place)}
+              >
+                <span
+                  className={`place-dot ${place.kind === 'curated' ? 'curated' : 'hotspot'}`}
+                />
+                <span className="place-row-text">
+                  <strong>{place.name}</strong>
+                  <small>
+                    {place.city} · {place.decadeHint}
+                    {place.distanceM != null
+                      ? ` · ${formatDistance(place.distanceM)}`
+                      : ''}
+                  </small>
+                </span>
+              </button>
+              {selected?.id === place.id && (
+                <PlacePreview
+                  place={place}
+                  user={user}
+                  decadeGroups={decadeGroups}
+                  photosStatus={placePhotosStatus}
+                  onOpenPlaceCamera={onOpenPlaceCamera}
+                  onOpenCurated={onOpenCurated}
+                />
+              )}
+            </div>
           ))}
         </div>
       </div>

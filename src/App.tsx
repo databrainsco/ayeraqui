@@ -150,7 +150,12 @@ export default function App() {
   )
 
   const openPlaceInCamera = useCallback(
-    async (place: { lat: number; lon: number; name: string }) => {
+    async (place: {
+      lat: number
+      lon: number
+      name: string
+      decade?: number | null
+    }) => {
       setBusy(true)
       setError(null)
       setCameraError(null)
@@ -176,13 +181,29 @@ export default function App() {
             }))
           : found
 
+        const groups = groupByDecade(photosForUi)
+        const wanted =
+          place.decade !== undefined
+            ? groups.find((g) => g.decade === place.decade)
+            : undefined
+        const first = wanted?.photos[0]
+
         setPhotos(photosForUi)
-        setSelectedPageId(null)
-        setActiveDecade(undefined)
+        setSelectedPageId(first?.pageId ?? null)
+        setActiveDecade(
+          first ? first.decade : place.decade !== undefined ? place.decade : undefined,
+        )
+        if (first) {
+          setOpacity(0.55)
+          setAlign(defaultAlign(first))
+          setCrop(EMPTY_CROP)
+        }
         setInfoOpen(false)
         setStatus(
           photosForUi.length
-            ? `Fotos de ${place.name}: elige una década`
+            ? first
+              ? null
+              : `Fotos de ${place.name}: elige una década`
             : `No hay fotos cerca de ${place.name}. Prueba otro punto.`,
         )
         setScreen('experience')

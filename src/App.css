@@ -424,34 +424,39 @@ a {
   accent-color: var(--accent);
 }
 
-.align-row {
-  display: flex;
+.size-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 0.5rem;
   align-items: center;
-  justify-content: center;
-  gap: 0.45rem;
-  padding: 0.35rem 0.55rem;
+  padding: 0.45rem 0.7rem;
   border-radius: 999px;
   background: var(--glass);
   backdrop-filter: blur(12px);
-  font-size: 0.78rem;
-  color: var(--ink);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--muted);
 }
 
-.align-row button {
+.size-row input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.size-reset {
   appearance: none;
-  border: 1px solid rgba(232, 239, 233, 0.2);
-  background: rgba(21, 32, 28, 0.7);
+  border: 0;
+  background: rgba(21, 32, 28, 0.75);
   color: var(--ink);
   border-radius: 999px;
-  width: 2rem;
-  height: 2rem;
+  padding: 0.28rem 0.65rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  font-weight: 600;
   cursor: pointer;
-}
-
-.align-row .align-reset {
-  width: auto;
-  padding: 0 0.7rem;
-  font-size: 0.75rem;
 }
 
 .overlay-hint {
@@ -758,8 +763,14 @@ a {
 /* —— Places map —— */
 .places {
   display: grid;
-  grid-template-rows: 42vh 1fr;
+  grid-template-rows: 52vh 1fr;
   background: var(--bg);
+  overflow: hidden;
+}
+
+.places-map-wrap {
+  position: relative;
+  min-height: 240px;
   overflow: hidden;
 }
 
@@ -769,6 +780,65 @@ a {
   min-height: 240px;
   background: #0a1210;
   z-index: 0;
+}
+
+.place-map-card {
+  position: absolute;
+  z-index: 650;
+  width: min(18.5rem, calc(100% - 1.4rem));
+  pointer-events: auto;
+  filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.45));
+}
+
+.place-map-card.is-above {
+  transform: translate(-50%, calc(-100% - 14px));
+}
+
+.place-map-card.is-below {
+  transform: translate(-50%, 14px);
+}
+
+.place-card.is-map {
+  margin: 0;
+  max-height: 42vh;
+  overflow: auto;
+}
+
+.place-card.is-inline {
+  margin-top: 0;
+  border-radius: 0 0 12px 12px;
+  border-top: 0;
+}
+
+.place-item.is-open .place-row {
+  border-radius: 12px 12px 0 0;
+}
+
+.place-decades-label {
+  margin: 0.55rem 0 0.25rem !important;
+  color: var(--accent) !important;
+  font-size: 0.68rem !important;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.place-decade-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.decade-chip {
+  appearance: none;
+  border: 0;
+  background: rgba(226, 168, 107, 0.18);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 0.32rem 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .places-top {

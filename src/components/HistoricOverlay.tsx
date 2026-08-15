@@ -1,5 +1,4 @@
 import {
-  useCallback,
   useEffect,
   useRef,
   useState,
@@ -42,6 +41,11 @@ type Props = {
 type UiMode = 'blend' | 'pan' | 'crop'
 type DragMode = 'blend' | 'pan' | null
 
+const SCALE_MIN = 0.25
+const SCALE_MAX = 4
+const clampScale = (value: number) =>
+  Math.min(SCALE_MAX, Math.max(SCALE_MIN, value))
+
 export function HistoricOverlay({
   photo,
   opacity,
@@ -63,6 +67,8 @@ export function HistoricOverlay({
   } | null>(null)
   const pointers = useRef<Map<number, { x: number; y: number }>>(new Map())
   const pinchStart = useRef<{ dist: number; scale: number } | null>(null)
+  const alignRef = useRef(align)
+  alignRef.current = align
 
   useEffect(() => {
     setMode('blend')
@@ -99,11 +105,11 @@ export function HistoricOverlay({
     if (pointers.current.size === 2 && mode === 'pan' && pinchStart.current) {
       const pts = [...pointers.current.values()]
       const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)
-      const nextScale = Math.min(
-        2.4,
-        Math.max(0.6, (pinchStart.current.scale * dist) / pinchStart.current.dist),
+      if (dist < 8) return
+      const nextScale = clampScale(
+        (pinchStart.current.scale * dist) / pinchStart.current.dist,
       )
-      onAlignChange({ ...align, scale: nextScale })
+      onAlignChange({ ...alignRef.current, scale: nextScale })
       return
     }
 
@@ -144,15 +150,9 @@ export function HistoricOverlay({
     }
   }
 
-  const nudgeScale = useCallback(
-    (delta: number) => {
-      onAlignChange({
-        ...align,
-        scale: Math.min(2.4, Math.max(0.6, align.scale + delta)),
-      })
-    },
-    [align, onAlignChange],
-  )
+  const setScale = (value: number) => {
+    onAlignChange({ ...align, scale: clampScale(value) })
+  }
 
   const setCropSide = (side: keyof OverlayCrop, value: number) => {
     const next = Math.min(40, Math.max(0, value))
@@ -245,17 +245,21 @@ export function HistoricOverlay({
         </div>
 
         {mode === 'pan' && (
-          <div className="align-row">
-            <button type="button" onClick={() => nudgeScale(-0.05)}>
-              −
-            </button>
-            <span>Zoom {Math.round(align.scale * 100)}%</span>
-            <button type="button" onClick={() => nudgeScale(0.05)}>
-              +
-            </button>
+          <div className="size-row">
+            <span>Chica</span>
+            <input
+              type="range"
+              min={SCALE_MIN}
+              max={SCALE_MAX}
+              step={0.01}
+              value={align.scale}
+              aria-label="Tamaño de la foto antigua"
+              onChange={(e) => setScale(Number(e.target.value))}
+            />
+            <span>Grande</span>
             <button
               type="button"
-              className="align-reset"
+              className="size-reset"
               onClick={() =>
                 onAlignChange(photo.align ?? { scale: 1, x: 0, y: 0 })
               }
@@ -301,7 +305,7 @@ export function HistoricOverlay({
 
       <div className="overlay-hint" aria-hidden>
         {mode === 'blend' && 'Desliza para mezclar cámara y foto'}
-        {mode === 'pan' && 'Arrastra para encajar · pellizca para zoom'}
+        {mode === 'pan' && 'Arrastra para mover · usa la barra para el tamaño'}
         {mode === 'crop' && 'Ajusta los bordes para recortar la foto antigua'}
       </div>
     </div>
