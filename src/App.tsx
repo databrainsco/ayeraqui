@@ -138,7 +138,9 @@ export default function App() {
         const found = await fetchHistoricPhotosNearby(pos.lat, pos.lon, r)
         applyFound(found, opts)
       } catch {
-        setError('No pudimos cargar fotos cercanas. Intenta de nuevo.')
+        setError(
+          'No pudimos cargar fotos de Wikimedia. Revisa tu red (datos móviles a veces bloquean Commons) e inténtalo de nuevo.',
+        )
         setStatus(null)
       } finally {
         setBusy(false)

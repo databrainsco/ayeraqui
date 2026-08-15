@@ -178,6 +178,8 @@ export function HistoricOverlay({
           alt={photo.title}
           draggable={false}
           className="overlay-image"
+          decoding="async"
+          referrerPolicy="no-referrer"
         />
       </div>
 

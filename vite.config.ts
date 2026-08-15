@@ -57,9 +57,10 @@ export default defineConfig({
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/commons\.wikimedia\.org\/.*/i,
-            handler: 'StaleWhileRevalidate',
+            handler: 'NetworkFirst',
             options: {
               cacheName: 'commons-api',
+              networkTimeoutSeconds: 8,
               expiration: { maxEntries: 64, maxAgeSeconds: 60 * 60 * 24 },
             },
           },
@@ -69,6 +70,14 @@ export default defineConfig({
             options: {
               cacheName: 'commons-images',
               expiration: { maxEntries: 80, maxAgeSeconds: 60 * 60 * 24 * 7 },
+            },
+          },
+          {
+            urlPattern: /^https:\/\/.*\.(?:cartocdn|openstreetmap)\.org\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'map-tiles',
+              expiration: { maxEntries: 120, maxAgeSeconds: 60 * 60 * 24 * 7 },
             },
           },
         ],

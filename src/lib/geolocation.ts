@@ -17,15 +17,21 @@ export class GeoError extends Error {
 
 function mapError(err: GeolocationPositionError): GeoError {
   if (err.code === err.PERMISSION_DENIED) {
-    return new GeoError('denied', 'Activa la ubicación para ver el antes de este lugar.')
+    return new GeoError(
+      'denied',
+      'Activa la ubicación (Ajustes → Safari/Chrome → Ubicación) para ver el antes de este lugar.',
+    )
   }
   if (err.code === err.TIMEOUT) {
-    return new GeoError('timeout', 'No pudimos obtener tu ubicación a tiempo.')
+    return new GeoError(
+      'timeout',
+      'No pudimos obtener tu ubicación a tiempo. En datos móviles tarda más: inténtalo de nuevo o usa el mapa.',
+    )
   }
   return new GeoError('unavailable', 'La ubicación no está disponible ahora.')
 }
 
-export function getCurrentPosition(): Promise<GeoPosition> {
+function requestPosition(options: PositionOptions): Promise<GeoPosition> {
   if (!('geolocation' in navigator)) {
     return Promise.reject(
       new GeoError('unsupported', 'Este dispositivo no soporta geolocalización.'),
@@ -42,13 +48,34 @@ export function getCurrentPosition(): Promise<GeoPosition> {
         })
       },
       (err) => reject(mapError(err)),
-      {
-        enableHighAccuracy: true,
-        timeout: 20000,
-        maximumAge: 5_000,
-      },
+      options,
     )
   })
+}
+
+/**
+ * En iPhone y datos móviles, GPS de alta precisión suele hacer timeout.
+ * Primero un fix rápido (red/Wi‑Fi), luego se intenta más preciso.
+ */
+export async function getCurrentPosition(): Promise<GeoPosition> {
+  try {
+    return await requestPosition({
+      enableHighAccuracy: false,
+      timeout: 12_000,
+      maximumAge: 60_000,
+    })
+  } catch (first) {
+    if (first instanceof GeoError && first.kind === 'denied') throw first
+    try {
+      return await requestPosition({
+        enableHighAccuracy: true,
+        timeout: 20_000,
+        maximumAge: 15_000,
+      })
+    } catch {
+      throw first
+    }
+  }
 }
 
 export function watchPosition(
@@ -62,6 +89,7 @@ export function watchPosition(
     return () => undefined
   }
 
+  // Sin timeout: en iOS un timeout en watchPosition aborta el seguimiento.
   const id = navigator.geolocation.watchPosition(
     (pos) => {
       onUpdate({
@@ -70,11 +98,13 @@ export function watchPosition(
         accuracy: pos.coords.accuracy,
       })
     },
-    (err) => onError?.(mapError(err)),
+    (err) => {
+      if (err.code === err.TIMEOUT) return
+      onError?.(mapError(err))
+    },
     {
-      enableHighAccuracy: true,
-      timeout: 20000,
-      maximumAge: 3_000,
+      enableHighAccuracy: false,
+      maximumAge: 15_000,
     },
   )
 

@@ -62,14 +62,27 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
+async function fetchJson<T>(url: string, timeoutMs = 12_000): Promise<T> {
+  const ctrl = new AbortController()
+  const timer = window.setTimeout(() => ctrl.abort(), timeoutMs)
+  try {
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      headers: { Accept: 'application/json' },
+    })
+    if (!res.ok) throw new Error(`Commons API ${res.status}`)
+    return (await res.json()) as T
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
+
 async function api<T>(params: Record<string, string>): Promise<T> {
   const url = new URL(API)
   Object.entries({ format: 'json', origin: '*', ...params }).forEach(([k, v]) =>
     url.searchParams.set(k, v),
   )
-  const res = await fetch(url.toString())
-  if (!res.ok) throw new Error(`Commons API ${res.status}`)
-  return res.json() as Promise<T>
+  return fetchJson<T>(url.toString())
 }
 
 async function geoSearch(
@@ -84,7 +97,7 @@ async function geoSearch(
     list: 'geosearch',
     gscoord: `${lat}|${lon}`,
     gsradius: String(Math.min(radiusM, 10000)),
-    gslimit: '40',
+    gslimit: '24',
     gsnamespace: '6',
   })
   return data.query?.geosearch ?? []
@@ -96,36 +109,39 @@ async function enrichPages(
 ): Promise<HistoricPhoto[]> {
   if (!items.length) return []
 
-  const titles = items.map((i) => i.title).join('|')
-  const data = await api<{
-    query?: {
-      pages?: Record<
-        string,
-        {
-          pageid: number
-          title: string
-          imageinfo?: Array<{
-            url: string
-            thumburl?: string
-            descriptionurl: string
-            extmetadata?: ExtMeta
-          }>
-          coordinates?: Array<{ lat: number; lon: number }>
-        }
-      >
-    }
-  }>({
-    action: 'query',
-    prop: 'imageinfo|coordinates',
-    titles,
-    iiprop: 'url|extmetadata|size',
-    iiurlwidth: '1280',
-    coprop: 'type|name|dim',
-    colimit: '40',
-  })
-
   const byTitle = new Map(items.map((i) => [i.title, i]))
-  const pages = Object.values(data.query?.pages ?? {})
+  const pages: Array<{
+    pageid: number
+    title: string
+    imageinfo?: Array<{
+      url: string
+      thumburl?: string
+      descriptionurl: string
+      extmetadata?: ExtMeta
+    }>
+    coordinates?: Array<{ lat: number; lon: number }>
+  }> = []
+
+  const chunkSize = 12
+  for (let i = 0; i < items.length; i += chunkSize) {
+    const chunk = items.slice(i, i + chunkSize)
+    const titles = chunk.map((item) => item.title).join('|')
+    const data = await api<{
+      query?: {
+        pages?: Record<string, (typeof pages)[number]>
+      }
+    }>({
+      action: 'query',
+      prop: 'imageinfo|coordinates',
+      titles,
+      iiprop: 'url|extmetadata|size',
+      iiurlwidth: '960',
+      coprop: 'type|name|dim',
+      colimit: '40',
+    }).catch(() => null)
+    if (!data) continue
+    pages.push(...Object.values(data.query?.pages ?? {}))
+  }
   const photos: HistoricPhoto[] = []
 
   for (const page of pages) {
@@ -165,11 +181,12 @@ async function enrichPages(
       ? stripHtml(meta.LicenseShortName.value)
       : null
 
+    const displayUrl = info.thumburl || info.url
     photos.push({
       pageId: page.pageid,
       title: page.title.replace(/^File:/, ''),
-      thumbUrl: info.thumburl || info.url,
-      fullUrl: info.url,
+      thumbUrl: displayUrl,
+      fullUrl: displayUrl,
       lat,
       lon,
       distanceM: distanceMeters(user, { lat, lon }),
@@ -208,10 +225,10 @@ export async function fetchHistoricPhotosNearby(
   const user = { lat, lon }
   const [curated, userOwned, hits] = await Promise.all([
     Promise.resolve(curatedNearby(user, radiusM)),
-    loadUserHistoricPhotos(user),
-    geoSearch(lat, lon, radiusM),
+    loadUserHistoricPhotos(user).catch(() => [] as HistoricPhoto[]),
+    geoSearch(lat, lon, radiusM).catch(() => [] as GeoSearchItem[]),
   ])
-  const remote = await enrichPages(hits, user)
+  const remote = await enrichPages(hits, user).catch(() => [] as HistoricPhoto[])
   const remoteInRadius = remote.filter((p) => p.distanceM <= radiusM)
   // Curated + fotos del usuario: siempre disponibles; Commons solo cerca.
   return mergePhotos(curated, userOwned, remoteInRadius)

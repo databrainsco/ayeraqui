@@ -111,10 +111,28 @@ export function PlacesMap({
       attributionControl: true,
     }).setView(center, user ? 13 : 5)
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; OpenStreetMap &copy; CARTO',
-      maxZoom: 19,
-    }).addTo(map)
+    const carto = L.tileLayer(
+      'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+      {
+        attribution: '&copy; OpenStreetMap &copy; CARTO',
+        maxZoom: 19,
+      },
+    )
+    const osm = L.tileLayer(
+      'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+      {
+        attribution: '&copy; OpenStreetMap',
+        maxZoom: 19,
+      },
+    )
+    carto.addTo(map)
+    let usedOsm = false
+    carto.on('tileerror', () => {
+      if (usedOsm) return
+      usedOsm = true
+      map.removeLayer(carto)
+      osm.addTo(map)
+    })
 
     L.control.zoom({ position: 'bottomright' }).addTo(map)
     layerRef.current = L.layerGroup().addTo(map)
