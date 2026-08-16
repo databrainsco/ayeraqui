@@ -177,9 +177,6 @@ export function PlacesMap({
   const mapRef = useRef<L.Map | null>(null)
   const layerRef = useRef<L.LayerGroup | null>(null)
   const [selected, setSelected] = useState<MapPlace | null>(null)
-  const [mapCardPos, setMapCardPos] = useState<{ x: number; y: number; above: boolean } | null>(
-    null,
-  )
   const [placePhotos, setPlacePhotos] = useState<HistoricPhoto[]>([])
   const [placePhotosStatus, setPlacePhotosStatus] = useState<string | null>(null)
   const [nearby, setNearby] = useState<HistoricPhoto[]>([])
@@ -343,28 +340,6 @@ export function PlacesMap({
   }, [user?.lat, user?.lon])
 
   useEffect(() => {
-    const map = mapRef.current
-    const wrap = mapEl.current
-    if (!map || !wrap || !selected) {
-      setMapCardPos(null)
-      return
-    }
-    const sync = () => {
-      const pt = map.latLngToContainerPoint([selected.lat, selected.lon])
-      const w = wrap.clientWidth
-      const h = wrap.clientHeight
-      const x = Math.min(w - 20, Math.max(20, pt.x))
-      const y = Math.min(h - 12, Math.max(12, pt.y))
-      setMapCardPos({ x, y, above: pt.y > 168 })
-    }
-    sync()
-    map.on('move zoom', sync)
-    return () => {
-      map.off('move zoom', sync)
-    }
-  }, [selected])
-
-  useEffect(() => {
     if (!selected) {
       setPlacePhotos([])
       setPlacePhotosStatus(null)
@@ -457,11 +432,8 @@ export function PlacesMap({
     <div className="shell places">
       <div className="places-map-wrap">
         <div className="places-map" ref={mapEl} />
-        {selected && mapCardPos && (
-          <div
-            className={`place-map-card ${mapCardPos.above ? 'is-above' : 'is-below'}`}
-            style={{ left: mapCardPos.x, top: mapCardPos.y }}
-          >
+        {selected && (
+          <div className="place-map-card">
             <PlacePreview
               place={selected}
               user={user}
