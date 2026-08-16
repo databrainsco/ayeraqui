@@ -177,6 +177,10 @@ export function PlacesMap({
   const mapRef = useRef<L.Map | null>(null)
   const layerRef = useRef<L.LayerGroup | null>(null)
   const [selected, setSelected] = useState<MapPlace | null>(null)
+  /** Evita abrir la ficha dos veces (mapa + lista). */
+  const [selectionSource, setSelectionSource] = useState<'map' | 'list' | null>(
+    null,
+  )
   const [placePhotos, setPlacePhotos] = useState<HistoricPhoto[]>([])
   const [placePhotosStatus, setPlacePhotosStatus] = useState<string | null>(null)
   const [nearby, setNearby] = useState<HistoricPhoto[]>([])
@@ -249,7 +253,10 @@ export function PlacesMap({
       map.invalidateSize()
     })
 
-    const onMapClick = () => setSelected(null)
+    const onMapClick = () => {
+      setSelected(null)
+      setSelectionSource(null)
+    }
     map.on('click', onMapClick)
 
     return () => {
@@ -279,7 +286,14 @@ export function PlacesMap({
       marker.bindTooltip(place.name, { direction: 'top', offset: [0, -8] })
       marker.on('click', (ev) => {
         L.DomEvent.stopPropagation(ev)
-        setSelected((current) => (current?.id === place.id ? null : place))
+        setSelected((current) => {
+          if (current?.id === place.id) {
+            setSelectionSource(null)
+            return null
+          }
+          setSelectionSource('map')
+          return place
+        })
         map.panTo([place.lat, place.lon])
       })
       marker.addTo(layer)
@@ -369,7 +383,14 @@ export function PlacesMap({
   }, [selected?.id])
 
   const focusPlace = (place: MapPlace) => {
-    setSelected((current) => (current?.id === place.id ? null : place))
+    setSelected((current) => {
+      if (current?.id === place.id) {
+        setSelectionSource(null)
+        return null
+      }
+      setSelectionSource('list')
+      return place
+    })
     mapRef.current?.panTo([place.lat, place.lon])
   }
 
@@ -432,7 +453,7 @@ export function PlacesMap({
     <div className="shell places">
       <div className="places-map-wrap">
         <div className="places-map" ref={mapEl} />
-        {selected && (
+        {selected && selectionSource === 'map' && (
           <div className="place-map-card">
             <PlacePreview
               place={selected}
@@ -604,7 +625,7 @@ export function PlacesMap({
           {ranked.map((place) => (
             <div
               key={place.id}
-              className={`place-item ${selected?.id === place.id ? 'is-open' : ''}`}
+              className={`place-item ${selected?.id === place.id && selectionSource === 'list' ? 'is-open' : ''}`}
             >
               <button
                 type="button"
@@ -624,7 +645,7 @@ export function PlacesMap({
                   </small>
                 </span>
               </button>
-              {selected?.id === place.id && (
+              {selected?.id === place.id && selectionSource === 'list' && (
                 <PlacePreview
                   place={place}
                   user={user}
