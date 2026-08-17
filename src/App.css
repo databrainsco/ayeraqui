@@ -464,17 +464,39 @@ a {
   left: 50%;
   bottom: 38%;
   transform: translateX(-50%);
-  z-index: 3;
-  pointer-events: none;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: calc(100% - 1.5rem);
   font-size: 0.72rem;
   letter-spacing: 0.04em;
   color: var(--ink);
   background: var(--glass);
   backdrop-filter: blur(10px);
-  padding: 0.35rem 0.7rem;
+  padding: 0.3rem 0.35rem 0.3rem 0.75rem;
   border-radius: 999px;
+  opacity: 0.92;
+}
+
+.overlay-hint span {
   white-space: nowrap;
-  opacity: 0.85;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.overlay-hint-close {
+  appearance: none;
+  flex: 0 0 auto;
+  width: 1.55rem;
+  height: 1.55rem;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(12, 20, 18, 0.55);
+  color: var(--ink);
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
 }
 
 .top-meta {

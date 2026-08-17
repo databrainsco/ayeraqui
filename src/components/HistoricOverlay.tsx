@@ -57,6 +57,7 @@ export function HistoricOverlay({
 }: Props) {
   const layerRef = useRef<HTMLDivElement>(null)
   const [mode, setMode] = useState<UiMode>('blend')
+  const [hintOpen, setHintOpen] = useState(true)
   const [dragging, setDragging] = useState<DragMode>(null)
   const dragStart = useRef<{
     x: number
@@ -72,10 +73,18 @@ export function HistoricOverlay({
 
   useEffect(() => {
     setMode('blend')
+    setHintOpen(true)
   }, [photo?.pageId])
+
+  useEffect(() => {
+    setHintOpen(true)
+    const timer = window.setTimeout(() => setHintOpen(false), 4200)
+    return () => window.clearTimeout(timer)
+  }, [mode, photo?.pageId])
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (mode === 'crop') return
+    setHintOpen(false)
     e.currentTarget.setPointerCapture(e.pointerId)
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
 
@@ -303,11 +312,23 @@ export function HistoricOverlay({
         )}
       </div>
 
-      <div className="overlay-hint" aria-hidden>
-        {mode === 'blend' && 'Desliza para mezclar cámara y foto'}
-        {mode === 'pan' && 'Arrastra para mover · usa la barra para el tamaño'}
-        {mode === 'crop' && 'Ajusta los bordes para recortar la foto antigua'}
-      </div>
+      {hintOpen && (
+        <div className="overlay-hint">
+          <span>
+            {mode === 'blend' && 'Desliza para mezclar cámara y foto'}
+            {mode === 'pan' && 'Arrastra para mover · usa la barra para el tamaño'}
+            {mode === 'crop' && 'Ajusta los bordes para recortar la foto antigua'}
+          </span>
+          <button
+            type="button"
+            className="overlay-hint-close"
+            aria-label="Cerrar aviso"
+            onClick={() => setHintOpen(false)}
+          >
+            ×
+          </button>
+        </div>
+      )}
     </div>
   )
 }
